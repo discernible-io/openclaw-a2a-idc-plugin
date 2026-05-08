@@ -56,6 +56,137 @@ function resolveInboundAuth(
     return { required: true, validKeys: [] };
 }
 
+function registerCli(api: OpenClawPluginApi, pluginConfig: A2APluginConfig): void {
+    api.registerCli(
+        ({ program }) => {
+            const a2a = program
+                .command("a2a")
+                .description("Manage A2A plugin keys and local configuration");
+
+            a2a.command("generate-key [label]")
+                .description("Generate a new inbound API key for A2A authentication")
+                .action(async (label?: string) => {
+                    const key = generateApiKey();
+                    try {
+                        const keyLabel = assertValidA2AInboundKeyLabel(
+                            label?.trim() || `key-${Date.now()}`,
+                        );
+                        const currentConfig = api.runtime.config.loadConfig() as Record<
+                            string,
+                            unknown
+                        >;
+                        const { a2aConfig } = extractA2AEntry(currentConfig);
+                        const existingInbound = parseA2APluginConfig(a2aConfig).inbound ?? {};
+                        const existingKeys = existingInbound.apiKeys ?? [];
+                        assertUniqueA2AInboundKeyLabels([
+                            ...existingKeys,
+                            { label: keyLabel, key },
+                        ]);
+
+                        await api.runtime.config.writeConfigFile(
+                            buildRootConfigWithA2A(currentConfig, {
+                                inbound: {
+                                    ...existingInbound,
+                                    apiKeys: [...existingKeys, { label: keyLabel, key }],
+                                },
+                            }) as import("openclaw/plugin-sdk").OpenClawConfig,
+                        );
+                        console.log(
+                            `Generated API key "${keyLabel}": ${key}\n\nRestart the gateway to apply.`,
+                        );
+                    } catch (err) {
+                        console.error(
+                            `Failed to generate key: ${err instanceof Error ? err.message : String(err)}`,
+                        );
+                        process.exitCode = 1;
+                    }
+                });
+
+            a2a.command("list-keys")
+                .description("List configured inbound A2A API keys")
+                .action(() => {
+                    try {
+                        const currentConfig = api.runtime.config.loadConfig() as Record<
+                            string,
+                            unknown
+                        >;
+                        const { a2aConfig: rawA2AConfig } = extractA2AEntry(currentConfig);
+                        const a2aConfig = parseA2APluginConfig(rawA2AConfig);
+                        const keys = a2aConfig.inbound?.apiKeys ?? [];
+                        if (keys.length === 0) {
+                            console.log("No inbound API keys configured.");
+                            return;
+                        }
+                        const maskKey = (k: string) =>
+                            k.length > 8 ? `${k.slice(0, 4)}...${k.slice(-4)}` : "****";
+                        const lines = keys.map((k) => `- ${k.label}: ${maskKey(k.key)}`);
+                        console.log(`Inbound API keys:\n${lines.join("\n")}`);
+                    } catch (err) {
+                        console.error(
+                            `Failed to list keys: ${err instanceof Error ? err.message : String(err)}`,
+                        );
+                        process.exitCode = 1;
+                    }
+                });
+
+            a2a.command("revoke-key <label>")
+                .description("Revoke an inbound A2A API key by label")
+                .action(async (label: string) => {
+                    try {
+                        const targetLabel = label.trim().toLowerCase();
+                        const currentConfig = api.runtime.config.loadConfig() as Record<
+                            string,
+                            unknown
+                        >;
+                        const { a2aConfig } = extractA2AEntry(currentConfig);
+                        const existingInbound = (a2aConfig.inbound ?? {}) as Record<
+                            string,
+                            unknown
+                        >;
+                        const existingKeys = Array.isArray(existingInbound.apiKeys)
+                            ? existingInbound.apiKeys
+                            : [];
+
+                        const filtered = existingKeys.filter(
+                            (k: Record<string, unknown>) =>
+                                typeof k.label !== "string" ||
+                                k.label.trim().toLowerCase() !== targetLabel,
+                        );
+                        if (filtered.length === existingKeys.length) {
+                            console.log(`No key found with label "${label}".`);
+                            process.exitCode = 1;
+                            return;
+                        }
+
+                        await api.runtime.config.writeConfigFile(
+                            buildRootConfigWithA2A(currentConfig, {
+                                inbound: {
+                                    ...existingInbound,
+                                    apiKeys: filtered.length > 0 ? filtered : undefined,
+                                },
+                            }) as import("openclaw/plugin-sdk").OpenClawConfig,
+                        );
+                        console.log(`Revoked key "${label}". Restart the gateway to apply.`);
+                    } catch (err) {
+                        console.error(
+                            `Failed to revoke key: ${err instanceof Error ? err.message : String(err)}`,
+                        );
+                        process.exitCode = 1;
+                    }
+                });
+        },
+        {
+            descriptors: [
+                {
+                    name: "a2a",
+                    description: "Manage A2A plugin keys and local configuration",
+                    hasSubcommands: true,
+                },
+            ],
+        },
+    );
+}
+
 const a2aPlugin = definePluginEntry({
     id: "a2a",
     name: "A2A Protocol",
@@ -69,6 +200,12 @@ const a2aPlugin = definePluginEntry({
 
     register(api: OpenClawPluginApi) {
         const pluginConfig = parseA2APluginConfig(api.pluginConfig);
+
+        if (api.registrationMode !== "full") {
+            registerCli(api, pluginConfig);
+            return;
+        }
+
         const stateDir = api.runtime.state.resolveStateDir();
         const workspaceDir = api.config.agents?.defaults?.workspace ?? process.cwd();
 
@@ -253,135 +390,7 @@ const a2aPlugin = definePluginEntry({
             noopPrefixes: ["plugins.entries.a2a.config.inbound.agentCard"],
         });
 
-        // --- CLI commands for key management ---
-        api.registerCli(
-            ({ program }) => {
-                const a2a = program
-                    .command("a2a")
-                    .description("Manage A2A plugin keys and local configuration");
-
-                a2a.command("generate-key [label]")
-                    .description("Generate a new inbound API key for A2A authentication")
-                    .action(async (label?: string) => {
-                        const key = generateApiKey();
-                        try {
-                            const keyLabel = assertValidA2AInboundKeyLabel(
-                                label?.trim() || `key-${Date.now()}`,
-                            );
-                            const currentConfig = api.runtime.config.loadConfig() as Record<
-                                string,
-                                unknown
-                            >;
-                            const { a2aConfig } = extractA2AEntry(currentConfig);
-                            const existingInbound = parseA2APluginConfig(a2aConfig).inbound ?? {};
-                            const existingKeys = existingInbound.apiKeys ?? [];
-                            assertUniqueA2AInboundKeyLabels([
-                                ...existingKeys,
-                                { label: keyLabel, key },
-                            ]);
-
-                            await api.runtime.config.writeConfigFile(
-                                buildRootConfigWithA2A(currentConfig, {
-                                    inbound: {
-                                        ...existingInbound,
-                                        apiKeys: [...existingKeys, { label: keyLabel, key }],
-                                    },
-                                }) as import("openclaw/plugin-sdk").OpenClawConfig,
-                            );
-                            console.log(
-                                `Generated API key "${keyLabel}": ${key}\n\nRestart the gateway to apply.`,
-                            );
-                        } catch (err) {
-                            console.error(
-                                `Failed to generate key: ${err instanceof Error ? err.message : String(err)}`,
-                            );
-                            process.exitCode = 1;
-                        }
-                    });
-
-                a2a.command("list-keys")
-                    .description("List configured inbound A2A API keys")
-                    .action(() => {
-                        try {
-                            const currentConfig = api.runtime.config.loadConfig() as Record<
-                                string,
-                                unknown
-                            >;
-                            const { a2aConfig: rawA2AConfig } = extractA2AEntry(currentConfig);
-                            const a2aConfig = parseA2APluginConfig(rawA2AConfig);
-                            const keys = a2aConfig.inbound?.apiKeys ?? [];
-                            if (keys.length === 0) {
-                                console.log("No inbound API keys configured.");
-                                return;
-                            }
-                            const maskKey = (k: string) =>
-                                k.length > 8 ? `${k.slice(0, 4)}...${k.slice(-4)}` : "****";
-                            const lines = keys.map((k) => `- ${k.label}: ${maskKey(k.key)}`);
-                            console.log(`Inbound API keys:\n${lines.join("\n")}`);
-                        } catch (err) {
-                            console.error(
-                                `Failed to list keys: ${err instanceof Error ? err.message : String(err)}`,
-                            );
-                            process.exitCode = 1;
-                        }
-                    });
-
-                a2a.command("revoke-key <label>")
-                    .description("Revoke an inbound A2A API key by label")
-                    .action(async (label: string) => {
-                        try {
-                            const targetLabel = label.trim().toLowerCase();
-                            const currentConfig = api.runtime.config.loadConfig() as Record<
-                                string,
-                                unknown
-                            >;
-                            const { a2aConfig } = extractA2AEntry(currentConfig);
-                            const existingInbound = (a2aConfig.inbound ?? {}) as Record<
-                                string,
-                                unknown
-                            >;
-                            const existingKeys = Array.isArray(existingInbound.apiKeys)
-                                ? existingInbound.apiKeys
-                                : [];
-
-                            const filtered = existingKeys.filter(
-                                (k: Record<string, unknown>) =>
-                                    typeof k.label !== "string" ||
-                                    k.label.trim().toLowerCase() !== targetLabel,
-                            );
-                            if (filtered.length === existingKeys.length) {
-                                console.log(`No key found with label "${label}".`);
-                                process.exitCode = 1;
-                                return;
-                            }
-
-                            await api.runtime.config.writeConfigFile(
-                                buildRootConfigWithA2A(currentConfig, {
-                                    inbound: {
-                                        ...existingInbound,
-                                        apiKeys: filtered.length > 0 ? filtered : undefined,
-                                    },
-                                }) as import("openclaw/plugin-sdk").OpenClawConfig,
-                            );
-                            console.log(`Revoked key "${label}". Restart the gateway to apply.`);
-                        } catch (err) {
-                            console.error(
-                                `Failed to revoke key: ${err instanceof Error ? err.message : String(err)}`,
-                            );
-                            process.exitCode = 1;
-                        }
-                    });
-            },
-            {
-                descriptors: [
-                    {
-                        name: "a2a",
-                        description: "Manage A2A plugin keys and local configuration",
-                        hasSubcommands: true,
-                    },
-                ],
-            },
-        );
+        registerCli(api, pluginConfig);
 
         // --- Lifecycle service ---
         api.registerService({

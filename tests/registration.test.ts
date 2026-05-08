@@ -50,10 +50,12 @@ class FakeCommand {
 function createApi(options?: {
     pluginConfig?: Record<string, unknown>;
     config?: Record<string, unknown>;
+    registrationMode?: "full" | "cli-metadata" | "discovery" | "setup-only" | "setup-runtime";
 }) {
     const tools: Array<{ name: string }> = [];
     const cliRegistrations: CapturedCliRegistration[] = [];
     const reloadRegistrations: CapturedReloadRegistration[] = [];
+    const mode = options?.registrationMode ?? "full";
 
     return {
         tools,
@@ -63,7 +65,7 @@ function createApi(options?: {
             id: "a2a",
             name: "A2A Protocol",
             source: "test",
-            registrationMode: "full" as const,
+            registrationMode: mode,
             pluginConfig: options?.pluginConfig ?? {},
             config:
                 options?.config ??
@@ -74,15 +76,17 @@ function createApi(options?: {
                         },
                     },
                 } satisfies Record<string, unknown>),
-            runtime: {
-                state: {
-                    resolveStateDir: () => "/tmp",
-                },
-                config: {
-                    loadConfig: () => ({}),
-                    writeConfigFile: async () => {},
-                },
-            },
+            runtime: mode === "full"
+                ? {
+                    state: {
+                        resolveStateDir: () => "/tmp",
+                    },
+                    config: {
+                        loadConfig: () => ({}),
+                        writeConfigFile: async () => {},
+                    },
+                }
+                : ({} as Record<string, never>),
             logger: {
                 info() {},
                 warn() {},
@@ -248,5 +252,61 @@ describe("plugin registration", () => {
                 },
             },
         });
+    });
+});
+
+describe("OpenClaw registration mode compatibility", () => {
+    test("cli-metadata mode registers CLI without accessing runtime", () => {
+        const { api, cliRegistrations, tools } = createApi({
+            registrationMode: "cli-metadata",
+        });
+
+        plugin.register(api as never);
+
+        expect(cliRegistrations).toHaveLength(1);
+        expect(cliRegistrations[0]?.opts?.descriptors).toEqual([
+            {
+                name: "a2a",
+                description: "Manage A2A plugin keys and local configuration",
+                hasSubcommands: true,
+            },
+        ]);
+        expect(tools).toHaveLength(0);
+    });
+
+    test("cli-metadata mode with outbound config does not register tools", () => {
+        const { api, tools, cliRegistrations } = createApi({
+            registrationMode: "cli-metadata",
+            pluginConfig: {
+                outbound: {
+                    agents: {
+                        weather: {
+                            url: "https://example.com/.well-known/agent-card.json",
+                        },
+                    },
+                },
+            },
+        });
+
+        plugin.register(api as never);
+
+        expect(tools).toHaveLength(0);
+        expect(cliRegistrations).toHaveLength(1);
+    });
+
+    test("discovery mode does not crash on empty runtime", () => {
+        const { api } = createApi({
+            registrationMode: "discovery",
+        });
+
+        expect(() => plugin.register(api as never)).not.toThrow();
+    });
+
+    test("setup-only mode does not crash on empty runtime", () => {
+        const { api } = createApi({
+            registrationMode: "setup-only",
+        });
+
+        expect(() => plugin.register(api as never)).not.toThrow();
     });
 });
