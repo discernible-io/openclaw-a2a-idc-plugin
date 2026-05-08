@@ -11,10 +11,7 @@
     },
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
-    "files": [
-        "dist",
-        "openclaw.plugin.json"
-    ],
+    "files": ["dist", "openclaw.plugin.json"],
     "scripts": {
         "build": "tsc",
         "check": "biome check .",
@@ -24,9 +21,7 @@
         "test:coverage": "bun test --coverage"
     },
     "openclaw": {
-        "extensions": [
-            "./dist/index.js"
-        ],
+        "extensions": ["./dist/index.js"],
         "compat": {
             "pluginApi": ">=2026.4.8",
             "minGatewayVersion": "2026.4.8"
@@ -36,12 +31,7 @@
             "pluginSdkVersion": "2026.4.8"
         }
     },
-    "keywords": [
-        "a2a",
-        "agent-to-agent",
-        "openclaw",
-        "plugin"
-    ],
+    "keywords": ["a2a", "agent-to-agent", "openclaw", "plugin"],
     "author": "A2A Net <hello@a2anet.com>",
     "license": "Apache-2.0",
     "repository": {
@@ -70,7 +60,5 @@
         "openclaw": "^2026.4.8",
         "typescript": "^5.7.0"
     },
-    "trustedDependencies": [
-        "@biomejs/biome"
-    ]
+    "trustedDependencies": ["@biomejs/biome"]
 }

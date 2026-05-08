@@ -76,17 +76,18 @@ function createApi(options?: {
                         },
                     },
                 } satisfies Record<string, unknown>),
-            runtime: mode === "full"
-                ? {
-                    state: {
-                        resolveStateDir: () => "/tmp",
-                    },
-                    config: {
-                        loadConfig: () => ({}),
-                        writeConfigFile: async () => {},
-                    },
-                }
-                : ({} as Record<string, never>),
+            runtime:
+                mode === "full"
+                    ? {
+                          state: {
+                              resolveStateDir: () => "/tmp",
+                          },
+                          config: {
+                              loadConfig: () => ({}),
+                              writeConfigFile: async () => {},
+                          },
+                      }
+                    : ({} as Record<string, never>),
             logger: {
                 info() {},
                 warn() {},
