@@ -24,6 +24,15 @@ type CapturedReloadRegistration = {
     noopPrefixes?: string[];
 };
 
+type CapturedHttpRoute = {
+    path: string;
+    auth?: string;
+};
+
+type CapturedService = {
+    id: string;
+};
+
 class FakeCommand {
     subcommands = new Map<string, FakeCommand>();
     actionHandler?: (...args: string[]) => unknown | Promise<unknown>;
@@ -50,17 +59,29 @@ class FakeCommand {
 function createApi(options?: {
     pluginConfig?: Record<string, unknown>;
     config?: Record<string, unknown>;
-    registrationMode?: "full" | "cli-metadata" | "discovery" | "setup-only" | "setup-runtime";
+    registrationMode?:
+        | "full"
+        | "tool-discovery"
+        | "cli-metadata"
+        | "discovery"
+        | "setup-only"
+        | "setup-runtime";
 }) {
     const tools: Array<{ name: string }> = [];
     const cliRegistrations: CapturedCliRegistration[] = [];
     const reloadRegistrations: CapturedReloadRegistration[] = [];
+    const httpRoutes: CapturedHttpRoute[] = [];
+    const services: CapturedService[] = [];
     const mode = options?.registrationMode ?? "full";
+
+    const needsRuntime = mode === "full" || mode === "tool-discovery";
 
     return {
         tools,
         cliRegistrations,
         reloadRegistrations,
+        httpRoutes,
+        services,
         api: {
             id: "a2a",
             name: "A2A Protocol",
@@ -76,18 +97,17 @@ function createApi(options?: {
                         },
                     },
                 } satisfies Record<string, unknown>),
-            runtime:
-                mode === "full"
-                    ? {
-                          state: {
-                              resolveStateDir: () => "/tmp",
-                          },
-                          config: {
-                              loadConfig: () => ({}),
-                              writeConfigFile: async () => {},
-                          },
-                      }
-                    : ({} as Record<string, never>),
+            runtime: needsRuntime
+                ? {
+                      state: {
+                          resolveStateDir: () => "/tmp",
+                      },
+                      config: {
+                          loadConfig: () => ({}),
+                          writeConfigFile: async () => {},
+                      },
+                  }
+                : ({} as Record<string, never>),
             logger: {
                 info() {},
                 warn() {},
@@ -107,10 +127,14 @@ function createApi(options?: {
                 reloadRegistrations.push(registration);
             },
             registerHook() {},
-            registerHttpRoute() {},
+            registerHttpRoute(route: CapturedHttpRoute) {
+                httpRoutes.push({ path: route.path, auth: route.auth });
+            },
             registerChannel() {},
             registerGatewayMethod() {},
-            registerService() {},
+            registerService(service: CapturedService) {
+                services.push({ id: service.id });
+            },
             registerNodeHostCommand() {},
             registerSecurityAuditCollector() {},
             registerConfigMigration() {},
@@ -293,6 +317,52 @@ describe("OpenClaw registration mode compatibility", () => {
 
         expect(tools).toHaveLength(0);
         expect(cliRegistrations).toHaveLength(1);
+    });
+
+    test("tool-discovery mode registers outbound tools without HTTP routes or services", () => {
+        const { api, tools, httpRoutes, services, cliRegistrations, reloadRegistrations } =
+            createApi({
+                registrationMode: "tool-discovery",
+                pluginConfig: {
+                    outbound: {
+                        agents: {
+                            weather: {
+                                url: "https://example.com/.well-known/agent-card.json",
+                            },
+                        },
+                    },
+                },
+            });
+
+        plugin.register(api as never);
+
+        expect(tools.map((tool) => tool.name)).toEqual([
+            "a2a_get_agents",
+            "a2a_get_agent",
+            "a2a_send_message",
+            "a2a_get_task",
+            "a2a_view_text_artifact",
+            "a2a_view_data_artifact",
+        ]);
+        expect(cliRegistrations).toHaveLength(1);
+        expect(httpRoutes).toHaveLength(0);
+        expect(services).toHaveLength(0);
+        expect(reloadRegistrations).toHaveLength(0);
+    });
+
+    test("tool-discovery mode registers update_agent_card when inbound is configured", () => {
+        const { api, tools } = createApi({
+            registrationMode: "tool-discovery",
+            pluginConfig: {
+                inbound: {
+                    apiKeys: [{ label: "test", key: "secret" }],
+                },
+            },
+        });
+
+        plugin.register(api as never);
+
+        expect(tools.map((tool) => tool.name)).toContain("a2a_update_agent_card");
     });
 
     test("discovery mode does not crash on empty runtime", () => {

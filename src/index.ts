@@ -201,13 +201,29 @@ const a2aPlugin = definePluginEntry({
     register(api: OpenClawPluginApi) {
         const pluginConfig = parseA2APluginConfig(api.pluginConfig);
 
-        if (api.registrationMode !== "full") {
-            registerCli(api, pluginConfig);
+        registerCli(api, pluginConfig);
+
+        // Tool descriptors must be registered in `tool-discovery` as well as
+        // `full` so the agent runtime can enumerate plugin tools when it
+        // cold-loads the plugin registry; everything else (HTTP routes,
+        // services, reload) requires the live gateway and stays in `full`.
+        // `tool-discovery` is widened in newer SDKs than this plugin's
+        // declared peer range, hence the cast.
+        const registrationMode = api.registrationMode as string;
+        if (registrationMode !== "full" && registrationMode !== "tool-discovery") {
             return;
         }
 
         const stateDir = api.runtime.state.resolveStateDir();
         const workspaceDir = api.config.agents?.defaults?.workspace ?? process.cwd();
+
+        // Shared state for the inbound server and the update-agent-card tool's
+        // `updateLiveCard` closure. In `tool-discovery` mode these stay at
+        // their initial values because the inbound init path is skipped.
+        let agentCard: AgentCard | null = null;
+        let httpHandlers: A2AHttpHandlers | null = null;
+        let initPromise: Promise<void> | null = null;
+        let livePluginConfig = { ...pluginConfig };
 
         // --- Outbound tools (via @a2anet/a2a-utils) ---
         const outbound = pluginConfig.outbound;
@@ -234,16 +250,55 @@ const a2aPlugin = definePluginEntry({
             );
         }
 
+        const authRequired = pluginConfig.inbound?.allowUnauthenticated !== true;
+
+        // --- Update agent card tool (only when inbound is accepting requests) ---
+        const inboundConfigured =
+            pluginConfig.inbound?.allowUnauthenticated === true ||
+            (pluginConfig.inbound?.apiKeys && pluginConfig.inbound.apiKeys.length > 0);
+
+        if (inboundConfigured) {
+            api.registerTool(
+                createUpdateAgentCardTool({
+                    loadConfig: async () =>
+                        api.runtime.config.loadConfig() as Record<string, unknown>,
+                    writeConfigFile: (cfg) =>
+                        api.runtime.config.writeConfigFile(
+                            cfg as import("openclaw/plugin-sdk").OpenClawConfig,
+                        ),
+                    updateLiveCard: (patch: Partial<A2AAgentCardConfig>) => {
+                        if (!agentCard) {
+                            return;
+                        }
+                        livePluginConfig = {
+                            ...livePluginConfig,
+                            inbound: {
+                                ...livePluginConfig.inbound,
+                                agentCard: {
+                                    ...livePluginConfig.inbound?.agentCard,
+                                    ...patch,
+                                },
+                            },
+                        };
+                        const rebuilt = new AgentCardBuilder({
+                            openclawConfig: api.config,
+                            pluginConfig: livePluginConfig,
+                            publicUrl: agentCard.url.replace(/\/a2a$/, ""),
+                            authRequired,
+                        }).build();
+                        Object.assign(agentCard, rebuilt);
+                    },
+                }),
+            );
+        }
+
+        // Everything below requires the live gateway runtime.
+        if (registrationMode !== "full") {
+            return;
+        }
+
         // --- Inbound server ---
         const authConfig = resolveInboundAuth(pluginConfig, api.logger);
-        const authRequired = authConfig?.required ?? false;
-
-        // Lazy-initialized on first HTTP request (to determine public URL).
-        // Uses a Promise lock to prevent concurrent initialization.
-        let agentCard: AgentCard | null = null;
-        let httpHandlers: A2AHttpHandlers | null = null;
-        let initPromise: Promise<void> | null = null;
-        let livePluginConfig = { ...pluginConfig };
 
         const initializeInbound = (publicUrl: string): Promise<void> => {
             if (agentCard) {
@@ -346,51 +401,9 @@ const a2aPlugin = definePluginEntry({
             },
         });
 
-        // --- Update agent card tool (only when inbound is accepting requests) ---
-        const inboundConfigured =
-            pluginConfig.inbound?.allowUnauthenticated === true ||
-            (pluginConfig.inbound?.apiKeys && pluginConfig.inbound.apiKeys.length > 0);
-
-        if (inboundConfigured) {
-            api.registerTool(
-                createUpdateAgentCardTool({
-                    loadConfig: async () =>
-                        api.runtime.config.loadConfig() as Record<string, unknown>,
-                    writeConfigFile: (cfg) =>
-                        api.runtime.config.writeConfigFile(
-                            cfg as import("openclaw/plugin-sdk").OpenClawConfig,
-                        ),
-                    updateLiveCard: (patch: Partial<A2AAgentCardConfig>) => {
-                        if (!agentCard) {
-                            return;
-                        }
-                        livePluginConfig = {
-                            ...livePluginConfig,
-                            inbound: {
-                                ...livePluginConfig.inbound,
-                                agentCard: {
-                                    ...livePluginConfig.inbound?.agentCard,
-                                    ...patch,
-                                },
-                            },
-                        };
-                        const rebuilt = new AgentCardBuilder({
-                            openclawConfig: api.config,
-                            pluginConfig: livePluginConfig,
-                            publicUrl: agentCard.url.replace(/\/a2a$/, ""),
-                            authRequired,
-                        }).build();
-                        Object.assign(agentCard, rebuilt);
-                    },
-                }),
-            );
-        }
-
         api.registerReload({
             noopPrefixes: ["plugins.entries.a2a.config.inbound.agentCard"],
         });
-
-        registerCli(api, pluginConfig);
 
         // --- Lifecycle service ---
         api.registerService({
