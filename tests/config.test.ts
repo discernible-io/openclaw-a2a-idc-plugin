@@ -230,14 +230,56 @@ describe("parseA2APluginConfig", () => {
         expect(result.inbound?.allowUnauthenticated).toBe(true);
     });
 
+    test("parses outbound auth config", () => {
+        const result = parseA2APluginConfig({
+            outbound: {
+                auth: {
+                    provider: "rodit",
+                    credentialsEnv: {
+                        accountId: "IDENTYCLAW_ACCOUNT_ID",
+                        privateKey: "IDENTYCLAW_NEAR_PRIVATE_KEY",
+                        baseUrl: "IDENTYCLAW_BASE_URL",
+                    },
+                    jwtCacheTtlSeconds: 300,
+                },
+                agents: {
+                    peer: { url: "https://example.com/.well-known/agent-card.json" },
+                },
+            },
+        });
+        expect(result.outbound?.auth).toEqual({
+            provider: "rodit",
+            credentialsEnv: {
+                accountId: "IDENTYCLAW_ACCOUNT_ID",
+                privateKey: "IDENTYCLAW_NEAR_PRIVATE_KEY",
+                baseUrl: "IDENTYCLAW_BASE_URL",
+            },
+            jwtCacheTtlSeconds: 300,
+        });
+    });
+
     test("parses inbound auth config", () => {
         const result = parseA2APluginConfig({
             inbound: {
                 allowUnauthenticated: false,
+                auth: {
+                    provider: "rodit",
+                    issuer: "https://api.identyclaw.com",
+                    audience: "agent-a.diholai.io",
+                    identityClaim: "token_id",
+                    allowApiKeyFallback: true,
+                },
                 apiKeys: [{ label: "key1", key: "abc123" }],
             },
         });
         expect(result.inbound?.allowUnauthenticated).toBe(false);
+        expect(result.inbound?.auth).toEqual({
+            provider: "rodit",
+            issuer: "https://api.identyclaw.com",
+            audience: "agent-a.diholai.io",
+            identityClaim: "token_id",
+            allowApiKeyFallback: true,
+        });
         expect(result.inbound?.apiKeys).toEqual([{ label: "key1", key: "abc123" }]);
     });
 

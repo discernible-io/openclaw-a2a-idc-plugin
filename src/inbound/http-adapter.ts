@@ -7,8 +7,8 @@ import type { AgentCard } from "@a2a-js/sdk";
 import type { A2ARequestHandler, User } from "@a2a-js/sdk/server";
 import { JsonRpcTransportHandler, ServerCallContext } from "@a2a-js/sdk/server";
 
-import type { A2AInboundKey } from "../config.js";
-import { sendAuthError, validateApiKey } from "./auth.js";
+import { type A2AAuthConfig, authenticateInboundRequest } from "../auth/authenticate-inbound.js";
+import { sendAuthError } from "./auth.js";
 
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
 const ANONYMOUS_SENDER_LABEL = "anonymous";
@@ -28,10 +28,7 @@ class A2ARequestUser implements User {
     }
 }
 
-export type A2AAuthConfig = {
-    required: boolean;
-    validKeys: A2AInboundKey[];
-};
+export type { A2AAuthConfig } from "../auth/authenticate-inbound.js";
 
 export type A2AHttpHandlerParams = {
     agentCard: AgentCard;
@@ -59,12 +56,14 @@ export class A2AHttpHandlers {
             return;
         }
 
-        const senderLabel = this.resolveSenderLabel(req, res);
+        const bodyResultPromise = this.readJsonBody(req);
+
+        const senderLabel = await this.resolveSenderLabel(req, res);
         if (!senderLabel) {
             return;
         }
 
-        const bodyResult = await this.readJsonBody(req);
+        const bodyResult = await bodyResultPromise;
         if (!bodyResult.ok) {
             this.sendJson(res, 400, {
                 jsonrpc: "2.0",
@@ -103,18 +102,21 @@ export class A2AHttpHandlers {
         this.sendJson(res, 200, rpcResponseOrStream);
     }
 
-    private resolveSenderLabel(req: IncomingMessage, res: ServerResponse): string | null {
+    private async resolveSenderLabel(
+        req: IncomingMessage,
+        res: ServerResponse,
+    ): Promise<string | null> {
         if (!this.params.auth?.required) {
             return ANONYMOUS_SENDER_LABEL;
         }
 
-        const result = validateApiKey(req, this.params.auth.validKeys);
+        const result = await authenticateInboundRequest(req, this.params.auth);
         if (!result.ok) {
-            sendAuthError(res, "Authentication required");
+            sendAuthError(res, result.error);
             return null;
         }
 
-        return result.label;
+        return result.identity;
     }
 
     private async readJsonBody(

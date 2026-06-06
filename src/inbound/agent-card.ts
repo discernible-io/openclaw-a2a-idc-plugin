@@ -12,6 +12,7 @@ export type BuildAgentCardParams = {
     openclawConfig: OpenClawConfig;
     publicUrl: string;
     authRequired?: boolean;
+    authScheme?: "apiKey" | "jwt";
     /** OpenClaw agent ID this card represents (used for name resolution). */
     agentId?: string;
     /** Agent Card metadata (name, description, skills) for this agent. */
@@ -55,10 +56,21 @@ export class AgentCardBuilder {
         };
 
         if (this.params.authRequired) {
-            card.securitySchemes = {
-                a2aApiKey: { type: "apiKey", name: "Authorization", in: "header" },
-            };
-            card.security = [{ a2aApiKey: [] }];
+            if (this.params.authScheme === "jwt") {
+                card.securitySchemes = {
+                    a2aBearerJwt: {
+                        type: "http",
+                        scheme: "bearer",
+                        bearerFormat: "JWT",
+                    },
+                };
+                card.security = [{ a2aBearerJwt: [] }];
+            } else {
+                card.securitySchemes = {
+                    a2aApiKey: { type: "apiKey", name: "Authorization", in: "header" },
+                };
+                card.security = [{ a2aApiKey: [] }];
+            }
         }
 
         return card;

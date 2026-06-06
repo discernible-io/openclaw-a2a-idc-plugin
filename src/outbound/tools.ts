@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    A2AAgents,
+    type A2AAgents,
     A2ASession,
     type A2AToolDefinition,
     A2ATools,
@@ -13,11 +13,15 @@ import {
 } from "@a2anet/a2a-utils";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
-import type { A2AAgentEntry } from "../config.js";
+import { createRoditOutboundAuthProvider } from "../auth/rodit-outbound.js";
+import type { A2AAgentEntry, A2AOutboundAuthConfig } from "../config.js";
 import { type AgentTool, jsonResult } from "../types.js";
+import { AuthenticatedA2AAgents } from "./authenticated-agents.js";
+import { withOutboundAuthRetry } from "./retry.js";
 
 export type CreateOutboundToolsParams = {
     agents: Record<string, A2AAgentEntry>;
+    auth?: A2AOutboundAuthConfig;
     stateDir: string;
     workspaceDir: string;
     taskStore?: boolean;
@@ -39,10 +43,8 @@ export type CreateOutboundToolsParams = {
  * the `a2a_` prefix is added here for OpenClaw namespacing.
  */
 export function createOutboundTools(params: CreateOutboundToolsParams): AgentTool[] {
-    const agents = new A2AAgents(
-        params.agents as Record<string, Record<string, unknown>>,
-        params.agentCardTimeout !== undefined ? { timeout: params.agentCardTimeout } : undefined,
-    );
+    const authProvider = createRoditOutboundAuthProvider(params.auth);
+    const agents = new AuthenticatedA2AAgents(params.agents, authProvider, params.agentCardTimeout);
 
     const taskStore =
         params.taskStore !== false
@@ -53,7 +55,7 @@ export function createOutboundTools(params: CreateOutboundToolsParams): AgentToo
             ? new LocalFileStore(`${params.workspaceDir}/a2a/outbound/files`)
             : undefined;
 
-    const session = new A2ASession(agents, {
+    const session = new A2ASession(agents as unknown as A2AAgents, {
         taskStore,
         fileStore,
         sendMessageTimeout: params.sendMessageTimeout,
@@ -76,8 +78,10 @@ export function createOutboundTools(params: CreateOutboundToolsParams): AgentToo
             label: `a2a_${def.name}`,
             description: def.description,
             parameters: jsonSchema,
-            execute: async (_toolCallId: string, params: Record<string, unknown>) =>
-                jsonResult(await def.execute(params)),
+            execute: async (_toolCallId: string, toolParams: Record<string, unknown>) =>
+                withOutboundAuthRetry(authProvider, async () =>
+                    jsonResult(await def.execute(toolParams)),
+                ),
         };
     });
 }

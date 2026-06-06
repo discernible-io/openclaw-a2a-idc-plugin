@@ -24,9 +24,9 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Extract the API key from the `Authorization: Bearer <key>` header.
+ * Extract the bearer token from the `Authorization: Bearer <token>` header.
  */
-function extractKey(req: IncomingMessage): string | undefined {
+export function extractBearerToken(req: IncomingMessage): string | undefined {
     const authHeader = req.headers.authorization;
     if (authHeader) {
         const match = /^Bearer\s+(\S+)$/i.exec(authHeader);
@@ -44,7 +44,7 @@ export type ValidateResult = { ok: true; label: string } | { ok: false; reason: 
  * Uses timing-safe comparison to prevent timing attacks.
  */
 export function validateApiKey(req: IncomingMessage, validKeys: A2AInboundKey[]): ValidateResult {
-    const key = extractKey(req);
+    const key = extractBearerToken(req);
     if (!key) {
         return { ok: false, reason: "missing_key" };
     }

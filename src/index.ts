@@ -14,6 +14,7 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
 import {
     type A2AAgentCardConfig,
+    type A2AInboundRoditAuthConfig,
     type A2APluginConfig,
     buildRootConfigWithA2A,
     extractA2AEntry,
@@ -80,9 +81,42 @@ function resolveInboundAuth(
         return undefined;
     }
 
+    const provider = inbound?.auth?.provider ?? "apiKey";
+
+    if (provider === "none") {
+        logger.info("[a2a] Inbound auth disabled (auth.provider: none)");
+        return undefined;
+    }
+
+    if (provider === "rodit") {
+        const issuer = inbound?.auth?.issuer?.trim();
+        const audience = inbound?.auth?.audience?.trim();
+        if (!issuer || !audience) {
+            logger.warn(
+                "[a2a] inbound.auth.provider is rodit but issuer/audience are missing — /a2a will reject all requests",
+            );
+        } else {
+            logger.info("[a2a] Inbound auth enabled with RODiT JWT validation");
+        }
+
+        const rodit: A2AInboundRoditAuthConfig = {
+            issuer: issuer ?? "",
+            audience: audience ?? "",
+            ...(inbound?.auth?.identityClaim ? { identityClaim: inbound.auth.identityClaim } : {}),
+        };
+
+        return {
+            required: true,
+            mode: "rodit",
+            rodit,
+            ...(inbound?.apiKeys ? { validKeys: inbound.apiKeys } : {}),
+            allowApiKeyFallback: inbound?.auth?.allowApiKeyFallback === true,
+        };
+    }
+
     if (inbound?.apiKeys && inbound.apiKeys.length > 0) {
         logger.info(`[a2a] Inbound auth enabled with ${inbound.apiKeys.length} key(s)`);
-        return { required: true, validKeys: inbound.apiKeys };
+        return { required: true, mode: "apiKey", validKeys: inbound.apiKeys };
     }
 
     logger.warn(
@@ -91,7 +125,23 @@ function resolveInboundAuth(
     logger.warn(
         "[a2a] Run `openclaw a2a generate-key <label>` and restart the gateway to start receiving messages",
     );
-    return { required: true, validKeys: [] };
+    return { required: true, mode: "apiKey", validKeys: [] };
+}
+
+function resolveInboundAuthScheme(pluginConfig: A2APluginConfig): "apiKey" | "jwt" {
+    if (pluginConfig.inbound?.auth?.provider === "rodit") {
+        return "jwt";
+    }
+    return "apiKey";
+}
+
+function isInboundConfigured(pluginConfig: A2APluginConfig): boolean {
+    const inbound = pluginConfig.inbound;
+    return (
+        inbound?.allowUnauthenticated === true ||
+        inbound?.auth?.provider === "rodit" ||
+        (inbound?.apiKeys !== undefined && inbound.apiKeys.length > 0)
+    );
 }
 
 function registerCli(api: OpenClawPluginApi, pluginConfig: A2APluginConfig): void {
@@ -313,6 +363,7 @@ const a2aPlugin = definePluginEntry({
                 rpcPath,
                 publicUrl,
                 authRequired,
+                authScheme,
             }).build();
         }
 
@@ -333,8 +384,12 @@ const a2aPlugin = definePluginEntry({
         // --- Outbound tools (via @a2anet/a2a-utils) ---
         const outbound = pluginConfig.outbound;
         if (outbound?.agents && Object.keys(outbound.agents).length > 0) {
+            if (outbound.auth?.provider === "rodit") {
+                api.logger.info("[a2a] Outbound auth enabled with RODiT JWT login");
+            }
             const tools = createOutboundTools({
                 agents: outbound.agents,
+                auth: outbound.auth,
                 stateDir,
                 workspaceDir,
                 taskStore: outbound.taskStore,
@@ -356,11 +411,10 @@ const a2aPlugin = definePluginEntry({
         }
 
         const authRequired = pluginConfig.inbound?.allowUnauthenticated !== true;
+        const authScheme = resolveInboundAuthScheme(pluginConfig);
 
         // --- Update agent card tool (only when inbound is accepting requests) ---
-        const inboundConfigured =
-            pluginConfig.inbound?.allowUnauthenticated === true ||
-            (pluginConfig.inbound?.apiKeys && pluginConfig.inbound.apiKeys.length > 0);
+        const inboundConfigured = isInboundConfigured(pluginConfig);
 
         if (inboundConfigured) {
             // In multi-agent mode the tool resolves to the calling agent's own

@@ -120,7 +120,24 @@ describe("AgentCardBuilder", () => {
         expect(card.description).toBe("AI assistant powered by OpenClaw");
     });
 
-    test("adds security schemes when auth required", () => {
+    test("adds JWT security schemes when auth uses rodit", () => {
+        const card = new AgentCardBuilder({
+            ...baseParams,
+            authRequired: true,
+            authScheme: "jwt",
+        }).build();
+        const raw = card as Record<string, unknown>;
+        expect(raw.securitySchemes).toEqual({
+            a2aBearerJwt: {
+                type: "http",
+                scheme: "bearer",
+                bearerFormat: "JWT",
+            },
+        });
+        expect(raw.security).toEqual([{ a2aBearerJwt: [] }]);
+    });
+
+    test("adds API key security schemes when auth uses apiKey", () => {
         const card = new AgentCardBuilder({ ...baseParams, authRequired: true }).build();
         const raw = card as Record<string, unknown>;
         expect(raw.securitySchemes).toBeDefined();

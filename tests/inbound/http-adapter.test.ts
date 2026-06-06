@@ -155,7 +155,7 @@ describe("handleJsonRpc", () => {
         const handlers = new A2AHttpHandlers({
             agentCard: makeAgentCard(),
             requestHandler: makeMockRequestHandler(),
-            auth: { required: true, validKeys: [{ label: "test", key: "secret" }] },
+            auth: { required: true, mode: "apiKey", validKeys: [{ label: "test", key: "secret" }] },
         });
         const req = makeReq("POST", {
             jsonrpc: "2.0",
@@ -173,7 +173,7 @@ describe("handleJsonRpc", () => {
         const handlers = new A2AHttpHandlers({
             agentCard: makeAgentCard(),
             requestHandler: handler,
-            auth: { required: true, validKeys: [{ label: "test", key: "secret" }] },
+            auth: { required: true, mode: "apiKey", validKeys: [{ label: "test", key: "secret" }] },
         });
         const req = makeReq(
             "POST",

@@ -23,6 +23,22 @@
             "label": "Remote Agents",
             "help": "Named A2A agents to communicate with. Each key is an agent ID, value is {url, headers?}."
         },
+        "outbound.auth": {
+            "label": "Outbound Auth",
+            "help": "Authentication for outbound A2A calls (RODiT JWT login)"
+        },
+        "outbound.auth.provider": {
+            "label": "Outbound Auth Provider",
+            "help": "Use rodit to obtain Passport JWTs dynamically for peer calls"
+        },
+        "outbound.auth.credentialsEnv": {
+            "label": "Credential Env Vars",
+            "help": "Env var names for NEAR account id, private key, and IdentyClaw base URL"
+        },
+        "outbound.auth.jwtCacheTtlSeconds": {
+            "label": "JWT Cache TTL",
+            "help": "Seconds to cache outbound RODiT JWT before re-login"
+        },
         "inbound": {
             "label": "Inbound",
             "help": "Settings for receiving messages from remote A2A agents"
@@ -38,6 +54,30 @@
         "inbound.apiKeys": {
             "label": "API Keys",
             "help": "Authentication keys for incoming A2A requests"
+        },
+        "inbound.auth": {
+            "label": "Inbound Auth",
+            "help": "Authentication provider for incoming A2A requests (apiKey, rodit, or none)"
+        },
+        "inbound.auth.provider": {
+            "label": "Auth Provider",
+            "help": "Use apiKey (default), rodit (Passport JWT), or none"
+        },
+        "inbound.auth.issuer": {
+            "label": "JWT Issuer",
+            "help": "Expected JWT iss claim when provider is rodit"
+        },
+        "inbound.auth.audience": {
+            "label": "JWT Audience",
+            "help": "Expected JWT aud claim when provider is rodit"
+        },
+        "inbound.auth.identityClaim": {
+            "label": "Identity Claim",
+            "help": "JWT claim mapped to inbound sender label (default token_id)"
+        },
+        "inbound.auth.allowApiKeyFallback": {
+            "label": "Allow API Key Fallback",
+            "help": "When provider is rodit, also accept configured apiKeys"
         }
     },
     "configSchema": {
@@ -90,6 +130,26 @@
                             }
                         }
                     },
+                    "auth": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "provider": {
+                                "type": "string",
+                                "enum": ["rodit"]
+                            },
+                            "credentialsEnv": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "accountId": { "type": "string" },
+                                    "privateKey": { "type": "string" },
+                                    "baseUrl": { "type": "string" }
+                                }
+                            },
+                            "jwtCacheTtlSeconds": { "type": "number" }
+                        }
+                    },
                     "taskStore": { "type": "boolean" },
                     "fileStore": { "type": "boolean" },
                     "sendMessageCharacterLimit": { "type": "number" },
@@ -117,6 +177,20 @@
                         }
                     },
                     "allowUnauthenticated": { "type": "boolean" },
+                    "auth": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "provider": {
+                                "type": "string",
+                                "enum": ["rodit", "apiKey", "none"]
+                            },
+                            "issuer": { "type": "string" },
+                            "audience": { "type": "string" },
+                            "identityClaim": { "type": "string" },
+                            "allowApiKeyFallback": { "type": "boolean" }
+                        }
+                    },
                     "apiKeys": {
                         "type": "array",
                         "items": {

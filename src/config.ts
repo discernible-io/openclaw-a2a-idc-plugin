@@ -25,6 +25,23 @@ export type A2AInboundKey = {
     key: string;
 };
 
+export type A2AInboundAuthProvider = "rodit" | "apiKey" | "none";
+
+export type A2AInboundRoditAuthConfig = {
+    issuer: string;
+    audience: string;
+    identityClaim?: string;
+    allowApiKeyFallback?: boolean;
+};
+
+export type A2AInboundAuthConfig = {
+    provider?: A2AInboundAuthProvider;
+    issuer?: string;
+    audience?: string;
+    identityClaim?: string;
+    allowApiKeyFallback?: boolean;
+};
+
 export type A2AAgentCardConfig = {
     name?: string;
     description?: string;
@@ -35,8 +52,23 @@ export type A2AInboundAgentConfig = {
     agentCard?: A2AAgentCardConfig;
 };
 
+export type A2AOutboundRoditCredentialsEnv = {
+    accountId?: string;
+    privateKey?: string;
+    baseUrl?: string;
+};
+
+export type A2AOutboundRoditAuthConfig = {
+    provider?: "rodit";
+    credentialsEnv?: A2AOutboundRoditCredentialsEnv;
+    jwtCacheTtlSeconds?: number;
+};
+
+export type A2AOutboundAuthConfig = A2AOutboundRoditAuthConfig;
+
 export type A2AOutboundConfig = {
     agents?: Record<string, A2AAgentEntry>;
+    auth?: A2AOutboundAuthConfig;
     taskStore?: boolean;
     fileStore?: boolean;
     sendMessageCharacterLimit?: number;
@@ -51,6 +83,7 @@ export type A2AOutboundConfig = {
 export type A2AInboundConfig = {
     agentCard?: A2AAgentCardConfig;
     allowUnauthenticated?: boolean;
+    auth?: A2AInboundAuthConfig;
     apiKeys?: A2AInboundKey[];
     agents?: Record<string, A2AInboundAgentConfig>;
 };
@@ -215,12 +248,58 @@ function parseInboundAgents(value: unknown): Record<string, A2AInboundAgentConfi
     return Object.keys(result).length > 0 ? result : undefined;
 }
 
+function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const raw = value as Record<string, unknown>;
+    const provider = raw.provider === "rodit" ? "rodit" : undefined;
+    const jwtCacheTtlSeconds = parsePositiveNumber(raw.jwtCacheTtlSeconds);
+
+    let credentialsEnv: A2AOutboundRoditCredentialsEnv | undefined;
+    if (
+        raw.credentialsEnv &&
+        typeof raw.credentialsEnv === "object" &&
+        !Array.isArray(raw.credentialsEnv)
+    ) {
+        const creds = raw.credentialsEnv as Record<string, unknown>;
+        const accountId =
+            typeof creds.accountId === "string" ? creds.accountId.trim() || undefined : undefined;
+        const privateKey =
+            typeof creds.privateKey === "string" ? creds.privateKey.trim() || undefined : undefined;
+        const baseUrl =
+            typeof creds.baseUrl === "string" ? creds.baseUrl.trim() || undefined : undefined;
+        if (accountId || privateKey || baseUrl) {
+            credentialsEnv = {
+                ...(accountId ? { accountId } : {}),
+                ...(privateKey ? { privateKey } : {}),
+                ...(baseUrl ? { baseUrl } : {}),
+            };
+        }
+    }
+
+    if (
+        provider === undefined &&
+        jwtCacheTtlSeconds === undefined &&
+        credentialsEnv === undefined
+    ) {
+        return undefined;
+    }
+
+    return {
+        ...(provider ? { provider } : {}),
+        ...(credentialsEnv ? { credentialsEnv } : {}),
+        ...(jwtCacheTtlSeconds !== undefined ? { jwtCacheTtlSeconds } : {}),
+    };
+}
+
 function parseOutbound(value: unknown): A2AOutboundConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
     }
     const raw = value as Record<string, unknown>;
     const agents = parseAgents(raw.agents);
+    const auth = parseOutboundAuth(raw.auth);
     const taskStore = typeof raw.taskStore === "boolean" ? raw.taskStore : undefined;
     const fileStore = typeof raw.fileStore === "boolean" ? raw.fileStore : undefined;
     const sendMessageCharacterLimit = parsePositiveNumber(raw.sendMessageCharacterLimit);
@@ -233,6 +312,7 @@ function parseOutbound(value: unknown): A2AOutboundConfig | undefined {
 
     const result: A2AOutboundConfig = {};
     if (agents) result.agents = agents;
+    if (auth) result.auth = auth;
     if (taskStore !== undefined) result.taskStore = taskStore;
     if (fileStore !== undefined) result.fileStore = fileStore;
     if (sendMessageCharacterLimit !== undefined)
@@ -249,12 +329,50 @@ function parseOutbound(value: unknown): A2AOutboundConfig | undefined {
     return Object.keys(result).length > 0 ? result : undefined;
 }
 
+function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const raw = value as Record<string, unknown>;
+    const providerRaw = typeof raw.provider === "string" ? raw.provider.trim() : "";
+    const provider =
+        providerRaw === "rodit" || providerRaw === "apiKey" || providerRaw === "none"
+            ? providerRaw
+            : undefined;
+    const issuer = typeof raw.issuer === "string" ? raw.issuer.trim() || undefined : undefined;
+    const audience =
+        typeof raw.audience === "string" ? raw.audience.trim() || undefined : undefined;
+    const identityClaim =
+        typeof raw.identityClaim === "string" ? raw.identityClaim.trim() || undefined : undefined;
+    const allowApiKeyFallback =
+        typeof raw.allowApiKeyFallback === "boolean" ? raw.allowApiKeyFallback : undefined;
+
+    if (
+        provider === undefined &&
+        issuer === undefined &&
+        audience === undefined &&
+        identityClaim === undefined &&
+        allowApiKeyFallback === undefined
+    ) {
+        return undefined;
+    }
+
+    return {
+        ...(provider ? { provider } : {}),
+        ...(issuer ? { issuer } : {}),
+        ...(audience ? { audience } : {}),
+        ...(identityClaim ? { identityClaim } : {}),
+        ...(allowApiKeyFallback !== undefined ? { allowApiKeyFallback } : {}),
+    };
+}
+
 function parseInbound(value: unknown): A2AInboundConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
     }
     const raw = value as Record<string, unknown>;
     const agentCard = parseAgentCard(raw.agentCard);
+    const auth = parseInboundAuth(raw.auth);
     const allowUnauthenticated =
         typeof raw.allowUnauthenticated === "boolean" ? raw.allowUnauthenticated : undefined;
     const apiKeys = parseApiKeys(raw.apiKeys);
@@ -262,6 +380,7 @@ function parseInbound(value: unknown): A2AInboundConfig | undefined {
 
     if (
         agentCard === undefined &&
+        auth === undefined &&
         allowUnauthenticated === undefined &&
         apiKeys === undefined &&
         agents === undefined
@@ -270,6 +389,7 @@ function parseInbound(value: unknown): A2AInboundConfig | undefined {
     }
     return {
         ...(agentCard ? { agentCard } : {}),
+        ...(auth ? { auth } : {}),
         ...(allowUnauthenticated !== undefined ? { allowUnauthenticated } : {}),
         ...(apiKeys ? { apiKeys } : {}),
         ...(agents ? { agents } : {}),
