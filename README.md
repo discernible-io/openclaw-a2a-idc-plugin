@@ -1,4 +1,6 @@
-# OpenClaw A2A Plugin
+# OpenClaw A2A Plugin (IdentyClaw fork)
+
+> **Fork notice:** This is `@discernible-io/openclaw-a2a-idc-plugin`, an IdentyClaw-maintained variant of [`@a2anet/openclaw-a2a-plugin`](https://github.com/a2anet/openclaw-a2a-plugin). It adds RODiT / Passport JWT authentication for A2A peers. See [`a2afork.md`](a2afork.md) and [`UPSTREAM.md`](UPSTREAM.md).
 
 ![OpenClaw A2A Plugin](images/openclaw-a2a-plugin-banner.png)
 
