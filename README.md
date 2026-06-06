@@ -44,7 +44,159 @@ Restart the gateway:
 openclaw gateway restart
 ```
 
-Follow the set up instructions in "📤 Sending Messages (outbound)" and/or "📥 Receiving Messages (inbound)".
+Follow the set up instructions in "🔐 IdentyClaw usage (RODiT peers)", "📤 Sending Messages (outbound)", and/or "📥 Receiving Messages (inbound)".
+
+## 🔐 IdentyClaw usage (RODiT peers)
+
+This fork authenticates A2A peers with **RODiT / Passport JWTs** via [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be), instead of pre-shared A2A API keys. Outbound callers log in with NEAR Passport credentials; inbound peers present short-lived JWTs signed by the IdentyClaw API.
+
+Legacy **API key** auth remains available for development or non-RODiT peers (`inbound.auth.provider: "apiKey"`, or `allowApiKeyFallback: true` with RODiT).
+
+### Environment variables
+
+Outbound RODiT login reads these env vars by default (override names with `outbound.auth.credentialsEnv`):
+
+| Variable | Purpose |
+| -------- | ------- |
+| `IDENTYCLAW_ACCOUNT_ID` | NEAR account id (Passport owner) |
+| `IDENTYCLAW_NEAR_PRIVATE_KEY` | Ed25519 private key (`ed25519:…` or base58) |
+| `IDENTYCLAW_BASE_URL` | IdentyClaw API base URL (e.g. `https://api.identyclaw.com`) |
+
+Keep credentials in env or secrets files — not in `openclaw.json`.
+
+### Outbound: call a RODiT peer
+
+Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **not** set `custom_headers.Authorization` for RODiT peers; the plugin obtains and caches the Bearer token automatically (refreshes once on HTTP 401).
+
+```json
+{
+    "plugins": {
+        "entries": {
+            "a2a": {
+                "enabled": true,
+                "config": {
+                    "outbound": {
+                        "auth": {
+                            "provider": "rodit",
+                            "jwtCacheTtlSeconds": 300
+                        },
+                        "agents": {
+                            "agent-b": {
+                                "url": "http://openclaw-agent-b:18789/.well-known/agent-card.json"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `auth.provider` | `"rodit"` | — | Enable `login_server` JWT acquisition for all outbound agents |
+| `auth.credentialsEnv` | `{ accountId, privateKey, baseUrl }` | `IDENTYCLAW_*` | Env var names for Passport credentials |
+| `auth.jwtCacheTtlSeconds` | `number` | `300` | In-memory JWT cache TTL before re-login |
+
+Non-auth `custom_headers` on individual agents still work (e.g. tracing headers).
+
+### Inbound: accept RODiT peer JWTs
+
+```json
+{
+    "plugins": {
+        "entries": {
+            "a2a": {
+                "enabled": true,
+                "config": {
+                    "inbound": {
+                        "publicBaseUrl": "https://agent-a.diholai.io",
+                        "auth": {
+                            "provider": "rodit",
+                            "issuer": "https://api.identyclaw.com",
+                            "audience": "agent-a.diholai.io",
+                            "identityClaim": "token_id"
+                        },
+                        "agentCard": {
+                            "name": "Juanelo",
+                            "description": "IdentyClaw agent"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `auth.provider` | `"rodit"` \| `"apiKey"` \| `"none"` | `"apiKey"` | Inbound authentication mode |
+| `auth.issuer` | `string` | — | Expected JWT `iss` (IdentyClaw API URL) |
+| `auth.audience` | `string` | — | Expected JWT `aud` — **must match how peers reach this agent** |
+| `auth.identityClaim` | `string` | `"token_id"` | JWT claim used as inbound sender label / thread key |
+| `auth.allowApiKeyFallback` | `boolean` | `false` | When `provider` is `rodit`, also accept configured `apiKeys` |
+| `publicBaseUrl` | `string` | — | External base URL for Agent Card `url` fields (see below) |
+
+Verified peer JWTs map to a sender label (e.g. Passport `token_id`) used for inbound conversation routing, the same role `apiKeys[].label` plays for API-key auth.
+
+### `publicBaseUrl` and reverse proxies
+
+By default, Agent Card URLs are derived from the incoming request (`Host`, `X-Forwarded-Host`, `X-Forwarded-Proto`). Behind a reverse proxy or when internal container DNS differs from the public hostname, set `inbound.publicBaseUrl` so discovery advertises the URL peers actually use:
+
+```json
+"inbound": {
+    "publicBaseUrl": "https://agent-a.diholai.io"
+}
+```
+
+**Pair `publicBaseUrl` with `auth.audience`** when using RODiT — both should reflect the same external hostname peers call. Mismatched `audience` causes all inbound JWT validation to fail.
+
+Example Agent Card endpoint after configuration:
+
+```text
+https://agent-a.diholai.io/a2a
+```
+
+(`publicBaseUrl` + `/a2a` for single-agent mode; multi-agent mode appends `/a2a/<agentId>`.)
+
+### Internal vs external peer URLs
+
+Use different URLs depending on who is calling:
+
+| Caller | Agent Card URL | Notes |
+| ------ | -------------- | ----- |
+| agent-a → agent-b (same Podman network) | `http://openclaw-agent-b:18789/.well-known/agent-card.json` | Container DNS; outbound config only |
+| agent-b → agent-a (same Podman network) | `http://openclaw-agent-a:18789/.well-known/agent-card.json` | Container DNS; outbound config only |
+| External peer → agent-a | `https://agent-a.diholai.io/.well-known/agent-card.json` | Public hostname; matches `publicBaseUrl` |
+
+Outbound peers use the **discovery URL from their config** (`outbound.agents.<id>.url`). Inbound agents use **`publicBaseUrl`** (when set) for the URL embedded in their own Agent Card.
+
+### External URL layout (same host)
+
+A2A shares the gateway host with OpenClaw hooks but uses separate paths:
+
+```text
+agent-a.example.com/hooks/agent              → OpenClaw hooks (unchanged)
+agent-a.example.com/a2a                      → A2A JSON-RPC
+agent-a.example.com/.well-known/agent-card.json  → A2A discovery
+```
+
+Do not mount A2A under `/hooks/a2a` unless you rewrite Agent Card URLs at the proxy.
+
+### Development fallback
+
+For local testing without Passport JWTs, use API keys as upstream does, or enable RODiT with API key fallback:
+
+```json
+"inbound": {
+    "auth": { "provider": "rodit", "issuer": "…", "audience": "…", "allowApiKeyFallback": true },
+    "apiKeys": [{ "label": "dev-peer", "key": "…" }]
+}
+```
+
+Full rollout plan and staging test tiers: [`a2afork.md`](a2afork.md).
 
 ## 💡 Use Cases
 
@@ -64,7 +216,9 @@ Follow the set up instructions in "📤 Sending Messages (outbound)" and/or "�
 - **Multi-turn conversations** — continue conversations across multiple messages using `context_id`
 - **Long-running task support** — if `a2a_send_message` times out, use `a2a_get_task` to monitor until the task reaches a terminal state
 - **Automatic artifact minimization** — large text and data artifacts are automatically minimized for LLM context windows, with dedicated tools for detailed navigation
-- **Inbound authentication** — API key-based auth with timing-safe HMAC-SHA256 comparison, per-key labels, and CLI key management
+- **Inbound authentication** — RODiT / Passport JWT validation (IdentyClaw fork), plus API key-based auth with timing-safe comparison, per-key labels, and CLI key management
+- **Outbound RODiT login** — dynamic JWT acquisition and cache refresh for IdentyClaw peers (no static `Authorization` headers in config)
+- **Public base URL** — `inbound.publicBaseUrl` for correct Agent Card URLs behind reverse proxies
 - **Live Agent Card updates** — update your agent's name, description, and skills at runtime with `a2a_update_agent_card` without restarting
 - **Tailscale integration** — expose your agent to the internet via Tailscale Funnel, or restrict to your tailnet with Tailscale Serve
 - **Custom headers and outbound auth** — per-agent custom headers with `${ENV_VAR}` substitution for secrets
@@ -147,6 +301,9 @@ exposure needed.
 | `sendMessageTimeout`          | `number`                                 | `60`    | Timeout in seconds for send message requests.               |
 | `getTaskTimeout`              | `number`                                 | `60`    | Timeout in seconds for get task monitoring.                 |
 | `getTaskPollInterval`         | `number`                                 | `5`     | Interval in seconds between task status polls.              |
+| `auth.provider`               | `"rodit"`                                | —       | Enable dynamic Passport JWT login for outbound calls (IdentyClaw fork). |
+| `auth.credentialsEnv`         | `{ accountId, privateKey, baseUrl }`     | `IDENTYCLAW_*` | Env var names for NEAR / IdentyClaw credentials.     |
+| `auth.jwtCacheTtlSeconds`     | `number`                                 | `300`   | JWT cache TTL in seconds before re-login.                   |
 
 ### Tools
 
@@ -263,8 +420,10 @@ endpoint. Follow the steps below to make your agent reachable.
 | `agentCard.name`        | `string`  | Agent identity name                  | Agent Card display name.                                                                                                                                                         |
 | `agentCard.description` | `string`  | `"AI assistant powered by OpenClaw"` | Agent Card description.                                                                                                                                                          |
 | `agentCard.skills`      | `array`   | `[]`                                 | Skills to advertise. Each needs `id`, `name`, `description`. Optional: `tags`, `examples`, `inputModes`, `outputModes`. Can also be set at runtime with `a2a_update_agent_card`. |
-| `apiKeys`               | `array`   | —                                    | Array of `{ label, key }` objects for inbound auth.                                                                                                                              |
-| `allowUnauthenticated`  | `boolean` | `false`                              | Skip API key validation for inbound requests.                                                                                                                                    |
+| `apiKeys`               | `array`   | —                                    | Array of `{ label, key }` objects for inbound auth (API-key mode or RODiT fallback).                                                                                              |
+| `allowUnauthenticated`  | `boolean` | `false`                              | Skip authentication for inbound requests.                                                                                                                                    |
+| `auth`                  | `object`  | `{ provider: "apiKey" }`             | Inbound auth: `rodit`, `apiKey`, or `none`. See [IdentyClaw usage](#-identyclaw-usage-rodit-peers).                                                                          |
+| `publicBaseUrl`         | `string`  | —                                    | External base URL for Agent Card discovery (overrides request Host / proxy headers). Pair with `auth.audience` for RODiT.                                                       |
 | `agents`                | `object`  | —                                    | Named inbound agents, keyed by agent ID. Each value takes an `agentCard` (`name`, `description`, `skills`). See [Hosting Multiple Agents](#hosting-multiple-agents).             |
 
 #### Hosting Multiple Agents
@@ -466,7 +625,7 @@ That's it! Your friend's agent should now be able to send messages and files to 
 ### Tools
 
 The `a2a_update_agent_card` tool is registered when inbound is configured
-(`apiKeys` or `allowUnauthenticated`).
+(`apiKeys`, RODiT auth, or `allowUnauthenticated`).
 
 #### `a2a_update_agent_card`
 
@@ -489,6 +648,8 @@ to the calling agent's own card.
 | `/a2a`                            | POST   | Bearer token | JSON-RPC 2.0 endpoint supporting `message/send`, `message/stream`, `tasks/get`, `tasks/cancel` |
 | `/a2a/<agentId>/agent-card.json`  | GET    | No           | Returns the Agent Card for `<agentId>` (when `inbound.agents` is configured)                   |
 | `/a2a/<agentId>`                  | POST   | Bearer token | JSON-RPC 2.0 endpoint for `<agentId>` (when `inbound.agents` is configured)                    |
+
+With RODiT inbound auth, the Bearer token is a Passport JWT (not a static API key). Agent Cards advertise `securitySchemes` with HTTP Bearer + JWT when `inbound.auth.provider` is `rodit`.
 
 ### Supported JSON-RPC Methods
 
