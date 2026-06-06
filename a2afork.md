@@ -265,7 +265,7 @@ Checklist:
 - [x] Refresh on 401 from peer (`withOutboundAuthRetry`)
 - [x] Unit tests green with injected `RoditLoginFn` (cache hit, invalidate refresh, 401 retry — `tests/auth/rodit-outbound.test.ts`, `tests/outbound/retry.test.ts`)
 - [ ] Staging smoke: live `login_server` + agent-a → agent-b over `identyclaw-net` (requires NEAR credentials; deferred to identyclaw — see [Test strategy](#test-strategy))
-- [ ] Commit + push Phase 1 + Phase 2 together
+- [x] Commit + push Phase 1 + Phase 2 together
 
 **Deliverable:** `a2a_send_message` from agent-a → agent-b works with no static A2A keys in config.
 
