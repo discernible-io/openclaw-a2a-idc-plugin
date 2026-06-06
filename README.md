@@ -30,11 +30,13 @@ Watch [OpenClaw A2A Plugin Demo - Connect your OpenClaw to other OpenClaws (and 
 
 ## 📦 Installation
 
-Install the plugin:
+Install the IdentyClaw fork:
 
 ```bash
-openclaw plugins install @a2anet/openclaw-a2a-plugin
+openclaw plugins install @discernible-io/openclaw-a2a-idc-plugin
 ```
+
+During development you can also install from a local path or git URL. Upstream package: `@a2anet/openclaw-a2a-plugin` (API-key auth only).
 
 Restart the gateway:
 

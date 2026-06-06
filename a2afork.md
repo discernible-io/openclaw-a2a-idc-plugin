@@ -11,11 +11,12 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 | Phase | Status | Notes |
 |-------|--------|-------|
 | 0 — Fork bootstrap | Done | Pushed to [`discernible-io/openclaw-a2a-idc-plugin`](https://github.com/discernible-io/openclaw-a2a-idc-plugin) |
-| 1 — Inbound RODiT auth | Done (local) | Implemented; not yet committed/pushed |
-| **2 — Outbound JWT acquisition** | Done (local) | Tier 1 unit tests pass; staging smoke deferred to identyclaw |
-| 3+ | Not started | Blocked on Phase 3 networking |
+| 1 — Inbound RODiT auth | Done | Committed with Phase 2 |
+| 2 — Outbound JWT acquisition | Done | Tier 1 unit tests pass; staging smoke deferred to identyclaw |
+| **3 — publicBaseUrl** | **Done (plugin)** | Config + URL resolution implemented; identyclaw networking in Phase 4 |
+| 4+ | Not started | Blocked on identyclaw integration |
 
-**Active step:** Phase 3 — `publicBaseUrl` and identyclaw container networking.
+**Active step:** Phase 4 — identyclaw repo integration (`ensure_a2a_config`, container networking).
 
 **Exit criteria for Phase 2:**
 
@@ -200,15 +201,15 @@ Locate upstream inbound HTTP handler (validates `Authorization: Bearer` against 
 
 - [x] Populate `securitySchemes` with HTTP Bearer + `bearerFormat: "JWT"`
 - [x] Populate `security` requirements referencing that scheme
-- [ ] Ensure `url` in card matches external base (`publicBaseUrl` — see Phase 3)
+- [x] Ensure `url` in card matches external base (`publicBaseUrl` — see Phase 3)
 
 **Deliverable:** `POST /a2a` accepts Passport JWT; sender threads attributed by `token_id`.
 
-> Phase 1 code is implemented locally (`src/auth/authenticate-inbound.ts`, `src/auth/rodit-inbound.ts`, …) but not yet pushed — bundle with Phase 2 commit.
+> Phase 1 code ships with Phase 2 commit (`ce0a385`).
 
 ---
 
-## Phase 2 — Outbound JWT acquisition *(in progress)*
+## Phase 2 — Outbound JWT acquisition *(done)*
 
 Replace static `custom_headers.Authorization` with dynamic tokens.
 
@@ -275,7 +276,7 @@ Checklist:
 
 Upstream `@a2anet/openclaw-a2a-plugin` does not expose `publicBaseUrl`. The fork should.
 
-### 3.1 Config
+### 3.1 Config *(plugin — done)*
 
 ```json
 {
@@ -287,7 +288,9 @@ Upstream `@a2anet/openclaw-a2a-plugin` does not expose `publicBaseUrl`. The fork
 
 Used when generating Agent Card `url` fields so discovery matches what peers actually call (especially behind reverse proxy).
 
-### 3.2 identyclaw networking (`identyclaw.sh` / `scripts/lib.sh`)
+Implementation: `inbound.publicBaseUrl` in config schema; `resolvePublicBaseUrl()` in `src/inbound/public-url.ts` overrides request Host / `X-Forwarded-*` headers when set.
+
+### 3.2 identyclaw networking (`identyclaw.sh` / `scripts/lib.sh`) *(Phase 4)*
 
 - [ ] Create Podman network `identyclaw-net` (idempotent)
 - [ ] `podman run --network identyclaw-net` for agent-a and agent-b
@@ -516,6 +519,7 @@ Upstream layout may vary; locate equivalents after fork:
 |------|----------------|
 | Plugin entry | `src/index.ts` or `src/plugin.ts` |
 | Inbound HTTP | handler registering `/a2a`, `/.well-known/agent-card.json` |
+| Public URL | `src/inbound/public-url.ts` |
 | Inbound auth | `src/auth/authenticate-inbound.ts`, `src/auth/rodit-inbound.ts` |
 | Outbound client | `src/outbound/tools.ts`, `src/outbound/authenticated-agents.ts` |
 | Outbound auth | `src/auth/outbound-auth.ts`, `src/auth/rodit-outbound.ts`, `src/outbound/retry.ts` |

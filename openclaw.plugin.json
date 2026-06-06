@@ -78,6 +78,10 @@
         "inbound.auth.allowApiKeyFallback": {
             "label": "Allow API Key Fallback",
             "help": "When provider is rodit, also accept configured apiKeys"
+        },
+        "inbound.publicBaseUrl": {
+            "label": "Public Base URL",
+            "help": "External base URL for Agent Card discovery (overrides request Host and proxy headers)"
         }
     },
     "configSchema": {
@@ -202,7 +206,8 @@
                                 "key": { "type": "string" }
                             }
                         }
-                    }
+                    },
+                    "publicBaseUrl": { "type": "string" }
                 }
             }
         }

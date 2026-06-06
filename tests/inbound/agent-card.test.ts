@@ -67,6 +67,14 @@ describe("AgentCardBuilder", () => {
         expect(card.url).toBe("https://example.com/a2a");
     });
 
+    test("uses publicBaseUrl-style external base for endpoint URL", () => {
+        const card = new AgentCardBuilder({
+            ...baseParams,
+            publicUrl: "https://agent-a.diholai.io",
+        }).build();
+        expect(card.url).toBe("https://agent-a.diholai.io/a2a");
+    });
+
     test("strips trailing slash from URL", () => {
         const card = new AgentCardBuilder({
             ...baseParams,

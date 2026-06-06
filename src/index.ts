@@ -31,6 +31,7 @@ import {
     multiAgentCardPath,
     multiAgentRpcPath,
 } from "./inbound/paths.js";
+import { resolvePublicBaseUrl } from "./inbound/public-url.js";
 import { createOutboundTools } from "./outbound/tools.js";
 import { createUpdateAgentCardTool } from "./tools/update-agent-card.js";
 import {
@@ -490,6 +491,7 @@ const a2aPlugin = definePluginEntry({
 
         // --- Inbound server ---
         const authConfig = resolveInboundAuth(pluginConfig, api.logger);
+        const configuredPublicBaseUrl = pluginConfig.inbound?.publicBaseUrl;
 
         const initializeEndpoint = (
             runtime: InboundEndpointRuntime,
@@ -523,7 +525,11 @@ const a2aPlugin = definePluginEntry({
                     const requestHandler = new DefaultRequestHandler(card, taskStore, executor);
                     runtime.httpHandlers = new A2AHttpHandlers({
                         agentCard: card,
-                        getAgentCard: (req) => buildCardFor(runtime, resolveRequestPublicUrl(req)),
+                        getAgentCard: (req) =>
+                            buildCardFor(
+                                runtime,
+                                resolvePublicBaseUrl(req, configuredPublicBaseUrl),
+                            ),
                         requestHandler,
                         auth: authConfig,
                     });
@@ -541,22 +547,6 @@ const a2aPlugin = definePluginEntry({
             return runtime.initPromise;
         };
 
-        function resolveRequestPublicUrl(req: import("node:http").IncomingMessage): string {
-            const forwardedHost = req.headers["x-forwarded-host"];
-            const host =
-                typeof forwardedHost === "string"
-                    ? forwardedHost.split(",")[0].trim()
-                    : req.headers.host || "localhost";
-            const rawProto = req.headers["x-forwarded-proto"];
-            const protocol =
-                typeof rawProto === "string"
-                    ? rawProto.split(",")[0].trim()
-                    : (req.socket as import("node:tls").TLSSocket).encrypted
-                      ? "https"
-                      : "http";
-            return `${protocol}://${host}`;
-        }
-
         const endpointHandler =
             (
                 runtime: InboundEndpointRuntime,
@@ -571,7 +561,10 @@ const a2aPlugin = definePluginEntry({
                 res: import("node:http").ServerResponse,
             ): Promise<void> => {
                 if (!runtime.httpHandlers) {
-                    await initializeEndpoint(runtime, resolveRequestPublicUrl(req));
+                    await initializeEndpoint(
+                        runtime,
+                        resolvePublicBaseUrl(req, configuredPublicBaseUrl),
+                    );
                 }
                 if (runtime.httpHandlers) {
                     await dispatch(runtime.httpHandlers, req, res);

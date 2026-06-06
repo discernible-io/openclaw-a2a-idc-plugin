@@ -86,6 +86,8 @@ export type A2AInboundConfig = {
     auth?: A2AInboundAuthConfig;
     apiKeys?: A2AInboundKey[];
     agents?: Record<string, A2AInboundAgentConfig>;
+    /** External base URL for Agent Card discovery (overrides request Host / proxy headers). */
+    publicBaseUrl?: string;
 };
 
 export type A2APluginConfig = {
@@ -377,13 +379,16 @@ function parseInbound(value: unknown): A2AInboundConfig | undefined {
         typeof raw.allowUnauthenticated === "boolean" ? raw.allowUnauthenticated : undefined;
     const apiKeys = parseApiKeys(raw.apiKeys);
     const agents = parseInboundAgents(raw.agents);
+    const publicBaseUrl =
+        typeof raw.publicBaseUrl === "string" ? raw.publicBaseUrl.trim() || undefined : undefined;
 
     if (
         agentCard === undefined &&
         auth === undefined &&
         allowUnauthenticated === undefined &&
         apiKeys === undefined &&
-        agents === undefined
+        agents === undefined &&
+        publicBaseUrl === undefined
     ) {
         return undefined;
     }
@@ -393,6 +398,7 @@ function parseInbound(value: unknown): A2AInboundConfig | undefined {
         ...(allowUnauthenticated !== undefined ? { allowUnauthenticated } : {}),
         ...(apiKeys ? { apiKeys } : {}),
         ...(agents ? { agents } : {}),
+        ...(publicBaseUrl ? { publicBaseUrl } : {}),
     };
 }
 

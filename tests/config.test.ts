@@ -283,6 +283,24 @@ describe("parseA2APluginConfig", () => {
         expect(result.inbound?.apiKeys).toEqual([{ label: "key1", key: "abc123" }]);
     });
 
+    test("parses inbound publicBaseUrl", () => {
+        const result = parseA2APluginConfig({
+            inbound: {
+                publicBaseUrl: "  https://agent-a.diholai.io/  ",
+            },
+        });
+        expect(result.inbound?.publicBaseUrl).toBe("https://agent-a.diholai.io/");
+    });
+
+    test("ignores empty inbound publicBaseUrl", () => {
+        const result = parseA2APluginConfig({
+            inbound: {
+                publicBaseUrl: "   ",
+            },
+        });
+        expect(result.inbound).toBeUndefined();
+    });
+
     test("skips inbound keys with missing fields", () => {
         const result = parseA2APluginConfig({
             inbound: {
