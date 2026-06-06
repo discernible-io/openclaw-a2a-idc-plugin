@@ -13,10 +13,11 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 | 0 — Fork bootstrap | Done | Pushed to [`discernible-io/openclaw-a2a-idc-plugin`](https://github.com/discernible-io/openclaw-a2a-idc-plugin) |
 | 1 — Inbound RODiT auth | Done | Committed with Phase 2 |
 | 2 — Outbound JWT acquisition | Done | Tier 1 unit tests pass; staging smoke deferred to identyclaw |
-| **3 — publicBaseUrl** | **Done (plugin)** | Config + URL resolution implemented; identyclaw networking in Phase 4 |
-| 4+ | Not started | Blocked on identyclaw integration |
+| **3 — publicBaseUrl** | **Done (plugin)** | Config + URL resolution implemented |
+| **4 — identyclaw integration** | **Done** | `ensure_a2a_config`, `identyclaw-net`, `test-a2a` in identyclaw-openclaw |
+| 5+ | Not started | Reverse proxy / staging smoke |
 
-**Active step:** Phase 4 — identyclaw repo integration (`ensure_a2a_config`, container networking).
+**Active step:** Phase 5 — reverse proxy and TLS (operator); Tier 2–3 staging smoke on identyclaw host.
 
 **Exit criteria for Phase 2:**
 
@@ -290,12 +291,12 @@ Used when generating Agent Card `url` fields so discovery matches what peers act
 
 Implementation: `inbound.publicBaseUrl` in config schema; `resolvePublicBaseUrl()` in `src/inbound/public-url.ts` overrides request Host / `X-Forwarded-*` headers when set.
 
-### 3.2 identyclaw networking (`identyclaw.sh` / `scripts/lib.sh`) *(Phase 4)*
+### 3.2 identyclaw networking (`identyclaw.sh` / `scripts/lib.sh`) *(done in Phase 4)*
 
-- [ ] Create Podman network `identyclaw-net` (idempotent)
-- [ ] `podman run --network identyclaw-net` for agent-a and agent-b
-- [ ] Keep `PUBLISH_HOST=127.0.0.1` for Control UI; peer traffic uses container DNS
-- [ ] Document peer URLs:
+- [x] Create Podman network `identyclaw-net` (idempotent)
+- [x] `podman run --network identyclaw-net` for agents
+- [x] Keep `PUBLISH_HOST=127.0.0.1` for Control UI; peer traffic uses container DNS
+- [x] Document peer URLs:
 
 | Caller | Agent Card URL |
 |--------|----------------|
@@ -307,29 +308,30 @@ Implementation: `inbound.publicBaseUrl` in config schema; `resolvePublicBaseUrl(
 
 ---
 
-## Phase 4 — identyclaw repo integration
+## Phase 4 — identyclaw repo integration *(done)*
 
 ### 4.1 Image and bootstrap
 
 | File | Change |
 |------|--------|
-| `Containerfile.himalaya` | Optionally add `@identyclaw/openclaw-a2a-plugin` to `OPENCLAW_BUNDLED_PLUGINS` |
-| `env.example` | Document `A2A_*` env vars, `IDENTYCLAW_*` reuse, `A2A_PUBLIC_BASE_URL` |
-| `scripts/lib.sh` | Add `ensure_a2a_config()` mirroring `ensure_identyclaw_config()` |
-| `identyclaw.sh` | Add `test-a2a agent-a agent-b` smoke command |
-| `security-compliance-improvements.md` | Link to this doc; mark API-key path as superseded for RODiT peers |
+| `Containerfile.himalaya` | Optionally add `@identyclaw/openclaw-a2a-plugin` to `OPENCLAW_BUNDLED_PLUGINS` (deferred; install on bootstrap) |
+| `env.example` | Document `A2A_*` env vars, `IDENTYCLAW_*` reuse, `AGENT_*_A2A_PUBLIC_BASE_URL` |
+| `scripts/lib.sh` | `ensure_a2a_config()`, `ensure_a2a_packages()`, `ensure_identyclaw_network()` |
+| `identyclaw.sh` | `test-a2a agent-a agent-b` smoke command; `--network identyclaw-net` on start |
+| `security-compliance-improvements.md` | Updated for RODiT JWT auth; links to this doc |
 
 ### 4.2 `ensure_a2a_config()` behavior
 
-On start, for agents in an A2A peer group:
+On start, for agents in an A2A peer group (when `secrets/near-credentials/*.json` exists):
 
-- Enable `plugins.entries.a2a` with RODiT auth config
-- Set `inbound.publicBaseUrl` from env if set
-- Set `outbound.agents` peer map (container names on `identyclaw-net`)
-- Add tools to `tools.allow`:
+- [x] Enable `plugins.entries.a2a` with RODiT auth config
+- [x] Set `inbound.publicBaseUrl` from env if set
+- [x] Set `outbound.agents` peer map (container names on `identyclaw-net`)
+- [x] Add tools to `tools.allow`:
   - `a2a_get_agents`, `a2a_get_agent`, `a2a_send_message`, `a2a_get_task`
   - `a2a_view_text_artifact`, `a2a_view_data_artifact`, `a2a_update_agent_card`
-- Require `secrets/near-credentials/*.json` (same gate as full identyclaw tools)
+- [x] Require `secrets/near-credentials/*.json` (same gate as full identyclaw tools)
+- [x] Never set `allowUnauthenticated`
 
 ### 4.3 Agent rollout order
 
