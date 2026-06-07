@@ -3,22 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { IncomingMessage } from "node:http";
-import { createRequire } from "node:module";
 
 import type { A2AInboundRoditAuthConfig } from "../config.js";
 import { extractBearerToken } from "../inbound/auth.js";
 import { parseA2AInboundKeyLabel } from "../utils/inbound-key-label.js";
-
-const require = createRequire(import.meta.url);
-const { validate_jwt_token_be } = require("@rodit/rodit-auth-be") as {
-    validate_jwt_token_be: RoditJwtValidatorFn;
-};
-
-type RoditJwtValidatorFn = (
-    token: string,
-    rodit: RoditAudienceRodit,
-    options?: RoditJwtValidateOptions,
-) => Promise<RoditJwtValidateResult>;
+import { loadRoditAuthBe } from "./rodit-runtime.js";
 
 type RoditAudienceRodit = {
     token_id: string;
@@ -26,11 +15,6 @@ type RoditAudienceRodit = {
     metadata: {
         subjectuniqueidentifier_url: string;
     };
-};
-
-type RoditJwtValidateOptions = {
-    enforceSessionRegistration?: boolean;
-    allowExpiredToken?: boolean;
 };
 
 type RoditJwtValidateResult = {
@@ -59,6 +43,7 @@ function buildAudienceRodit(config: A2AInboundRoditAuthConfig): RoditAudienceRod
 }
 
 export const defaultRoditJwtValidator: RoditJwtValidator = async (token, config) => {
+    const { validate_jwt_token_be } = loadRoditAuthBe({ logLevel: config.logLevel });
     return validate_jwt_token_be(token, buildAudienceRodit(config), {
         enforceSessionRegistration: false,
     });

@@ -6,17 +6,10 @@ import { createRequire } from "node:module";
 
 import type { A2AOutboundRoditAuthConfig } from "../config.js";
 import type { OutboundAuthProvider } from "./outbound-auth.js";
+import { loadRoditAuthBe } from "./rodit-runtime.js";
 
 const require = createRequire(import.meta.url);
 const bs58 = require("bs58") as { decode: (input: string) => Uint8Array };
-const { login_server } = require("@rodit/rodit-auth-be") as {
-    login_server: RoditLoginServerFn;
-};
-
-type RoditLoginServerFn = (
-    configOwnRodit: RoditLoginConfig,
-    options?: RoditLoginOptions,
-) => Promise<RoditLoginResult>;
 
 type RoditLoginConfig = {
     own_rodit: {
@@ -45,7 +38,10 @@ export type RoditOutboundCredentials = {
     baseUrl: string;
 };
 
-export type RoditLoginFn = (credentials: RoditOutboundCredentials) => Promise<string>;
+export type RoditLoginFn = (
+    credentials: RoditOutboundCredentials,
+    options?: { logLevel?: string },
+) => Promise<string>;
 
 const DEFAULT_CREDENTIALS_ENV = {
     accountId: "IDENTYCLAW_ACCOUNT_ID",
@@ -76,7 +72,8 @@ function buildLoginConfig(credentials: RoditOutboundCredentials): RoditLoginConf
     };
 }
 
-export const defaultRoditLogin: RoditLoginFn = async (credentials) => {
+export const defaultRoditLogin: RoditLoginFn = async (credentials, options) => {
+    const { login_server } = loadRoditAuthBe({ logLevel: options?.logLevel });
     const result = await login_server(buildLoginConfig(credentials), {
         accountId: credentials.accountId,
     });
@@ -125,7 +122,9 @@ export class RoditOutboundAuthProvider implements OutboundAuthProvider {
             return this.cachedToken;
         }
 
-        const token = await this.loginFn(this.resolveCredentials());
+        const token = await this.loginFn(this.resolveCredentials(), {
+            logLevel: this.config.logLevel,
+        });
         this.cachedToken = token;
         this.expiresAtMs = now + this.cacheTtlMs();
         return token;

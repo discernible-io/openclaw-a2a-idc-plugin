@@ -64,6 +64,20 @@ Outbound RODiT login reads these env vars by default (override names with `outbo
 
 Keep credentials in env or secrets files — not in `openclaw.json`.
 
+### Embedding in OpenClaw chat / gateway (quiet mode)
+
+When this plugin is enabled, OpenClaw loads it in **chat** (`node dist/index.js chat`) as well as the **gateway**. [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be) logs JSON to stdout and `node-config` warns on stderr at **import time**, which can appear inline in the chat TUI.
+
+This plugin **lazy-loads** `rodit-auth-be` only on the first inbound JWT validation or outbound `login_server` call, and applies quiet embed defaults before import:
+
+| Variable | Default when unset |
+| -------- | ------------------ |
+| `LOG_LEVEL` | `error` |
+| `SUPPRESS_NO_CONFIG_WARNING` | `true` |
+| `SUPPRESS_STRICTNESS_CHECK` | `true` |
+
+Host env vars always win — IdentyClaw agents can set these in `.env` (e.g. via `sync_quiet_plugin_env` on bootstrap). Override per-plugin with `inbound.auth.logLevel` or `outbound.auth.logLevel` in `openclaw.json` until upstream `rodit-auth-be` defaults to library-quiet mode.
+
 ### Outbound: call a RODiT peer
 
 Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **not** set `custom_headers.Authorization` for RODiT peers; the plugin obtains and caches the Bearer token automatically (refreshes once on HTTP 401).
@@ -98,6 +112,7 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 | `auth.provider` | `"rodit"` | — | Enable `login_server` JWT acquisition for all outbound agents |
 | `auth.credentialsEnv` | `{ accountId, privateKey, baseUrl }` | `IDENTYCLAW_*` | Env var names for Passport credentials |
 | `auth.jwtCacheTtlSeconds` | `number` | `300` | In-memory JWT cache TTL before re-login |
+| `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
 
 Non-auth `custom_headers` on individual agents still work (e.g. tracing headers).
 
@@ -137,6 +152,7 @@ Non-auth `custom_headers` on individual agents still work (e.g. tracing headers)
 | `auth.audience` | `string` | — | Expected JWT `aud` — **must match how peers reach this agent** |
 | `auth.identityClaim` | `string` | `"token_id"` | JWT claim used as inbound sender label / thread key |
 | `auth.allowApiKeyFallback` | `boolean` | `false` | When `provider` is `rodit`, also accept configured `apiKeys` |
+| `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
 | `publicBaseUrl` | `string` | — | External base URL for Agent Card `url` fields (see below) |
 
 Verified peer JWTs map to a sender label (e.g. Passport `token_id`) used for inbound conversation routing, the same role `apiKeys[].label` plays for API-key auth.

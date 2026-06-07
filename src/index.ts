@@ -104,6 +104,7 @@ function resolveInboundAuth(
             issuer: issuer ?? "",
             audience: audience ?? "",
             ...(inbound?.auth?.identityClaim ? { identityClaim: inbound.auth.identityClaim } : {}),
+            ...(inbound?.auth?.logLevel ? { logLevel: inbound.auth.logLevel } : {}),
         };
 
         return {

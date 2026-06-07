@@ -32,6 +32,8 @@ export type A2AInboundRoditAuthConfig = {
     audience: string;
     identityClaim?: string;
     allowApiKeyFallback?: boolean;
+    /** Winston log level for `@rodit/rodit-auth-be` when loaded (default: error). */
+    logLevel?: string;
 };
 
 export type A2AInboundAuthConfig = {
@@ -40,6 +42,7 @@ export type A2AInboundAuthConfig = {
     audience?: string;
     identityClaim?: string;
     allowApiKeyFallback?: boolean;
+    logLevel?: string;
 };
 
 export type A2AAgentCardConfig = {
@@ -62,6 +65,8 @@ export type A2AOutboundRoditAuthConfig = {
     provider?: "rodit";
     credentialsEnv?: A2AOutboundRoditCredentialsEnv;
     jwtCacheTtlSeconds?: number;
+    /** Winston log level for `@rodit/rodit-auth-be` when loaded (default: error). */
+    logLevel?: string;
 };
 
 export type A2AOutboundAuthConfig = A2AOutboundRoditAuthConfig;
@@ -257,6 +262,7 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
     const raw = value as Record<string, unknown>;
     const provider = raw.provider === "rodit" ? "rodit" : undefined;
     const jwtCacheTtlSeconds = parsePositiveNumber(raw.jwtCacheTtlSeconds);
+    const logLevel = typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
 
     let credentialsEnv: A2AOutboundRoditCredentialsEnv | undefined;
     if (
@@ -283,7 +289,8 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
     if (
         provider === undefined &&
         jwtCacheTtlSeconds === undefined &&
-        credentialsEnv === undefined
+        credentialsEnv === undefined &&
+        logLevel === undefined
     ) {
         return undefined;
     }
@@ -292,6 +299,7 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
         ...(provider ? { provider } : {}),
         ...(credentialsEnv ? { credentialsEnv } : {}),
         ...(jwtCacheTtlSeconds !== undefined ? { jwtCacheTtlSeconds } : {}),
+        ...(logLevel ? { logLevel } : {}),
     };
 }
 
@@ -348,13 +356,15 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
         typeof raw.identityClaim === "string" ? raw.identityClaim.trim() || undefined : undefined;
     const allowApiKeyFallback =
         typeof raw.allowApiKeyFallback === "boolean" ? raw.allowApiKeyFallback : undefined;
+    const logLevel = typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
 
     if (
         provider === undefined &&
         issuer === undefined &&
         audience === undefined &&
         identityClaim === undefined &&
-        allowApiKeyFallback === undefined
+        allowApiKeyFallback === undefined &&
+        logLevel === undefined
     ) {
         return undefined;
     }
@@ -365,6 +375,7 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
         ...(audience ? { audience } : {}),
         ...(identityClaim ? { identityClaim } : {}),
         ...(allowApiKeyFallback !== undefined ? { allowApiKeyFallback } : {}),
+        ...(logLevel ? { logLevel } : {}),
     };
 }
 

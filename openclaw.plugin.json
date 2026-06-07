@@ -39,6 +39,10 @@
             "label": "JWT Cache TTL",
             "help": "Seconds to cache outbound RODiT JWT before re-login"
         },
+        "outbound.auth.logLevel": {
+            "label": "RODiT Log Level",
+            "help": "Winston log level for @rodit/rodit-auth-be when loaded (default error)"
+        },
         "inbound": {
             "label": "Inbound",
             "help": "Settings for receiving messages from remote A2A agents"
@@ -78,6 +82,10 @@
         "inbound.auth.allowApiKeyFallback": {
             "label": "Allow API Key Fallback",
             "help": "When provider is rodit, also accept configured apiKeys"
+        },
+        "inbound.auth.logLevel": {
+            "label": "RODiT Log Level",
+            "help": "Winston log level for @rodit/rodit-auth-be when loaded (default error)"
         },
         "inbound.publicBaseUrl": {
             "label": "Public Base URL",
@@ -151,7 +159,8 @@
                                     "baseUrl": { "type": "string" }
                                 }
                             },
-                            "jwtCacheTtlSeconds": { "type": "number" }
+                            "jwtCacheTtlSeconds": { "type": "number" },
+                            "logLevel": { "type": "string" }
                         }
                     },
                     "taskStore": { "type": "boolean" },
@@ -192,7 +201,8 @@
                             "issuer": { "type": "string" },
                             "audience": { "type": "string" },
                             "identityClaim": { "type": "string" },
-                            "allowApiKeyFallback": { "type": "boolean" }
+                            "allowApiKeyFallback": { "type": "boolean" },
+                            "logLevel": { "type": "string" }
                         }
                     },
                     "apiKeys": {
