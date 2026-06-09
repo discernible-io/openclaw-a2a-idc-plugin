@@ -100,6 +100,12 @@ export type A2APluginConfig = {
     inbound?: A2AInboundConfig;
 };
 
+type ConfigParseWarnings = string[];
+
+function pushConfigWarning(warnings: ConfigParseWarnings | undefined, message: string): void {
+    warnings?.push(message);
+}
+
 function parseStringArray(value: unknown): string[] | undefined {
     if (!Array.isArray(value)) {
         return undefined;
@@ -110,13 +116,18 @@ function parseStringArray(value: unknown): string[] | undefined {
     return result.length > 0 ? result : undefined;
 }
 
-function parseSkills(value: unknown): A2ASkillConfig[] | undefined {
+function parseSkills(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+    path = "agentCard.skills",
+): A2ASkillConfig[] | undefined {
     if (!Array.isArray(value)) {
         return undefined;
     }
     const result: A2ASkillConfig[] = [];
-    for (const entry of value) {
+    for (const [index, entry] of value.entries()) {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            pushConfigWarning(warnings, `${path}[${index}]: entry must be an object, skipped`);
             continue;
         }
         const raw = entry as Record<string, unknown>;
@@ -124,6 +135,15 @@ function parseSkills(value: unknown): A2ASkillConfig[] | undefined {
         const name = typeof raw.name === "string" ? raw.name.trim() : "";
         const description = typeof raw.description === "string" ? raw.description.trim() : "";
         if (!id || !name || !description) {
+            const missing = [
+                !id ? "id" : null,
+                !name ? "name" : null,
+                !description ? "description" : null,
+            ].filter((field): field is string => field !== null);
+            pushConfigWarning(
+                warnings,
+                `${path}[${index}]: missing required field(s) (${missing.join(", ")}), skipped`,
+            );
             continue;
         }
         const skill: A2ASkillConfig = { id, name, description };
@@ -148,19 +168,27 @@ function parseSkills(value: unknown): A2ASkillConfig[] | undefined {
     return result.length > 0 ? result : undefined;
 }
 
-function parseAgents(value: unknown): Record<string, A2AAgentEntry> | undefined {
+function parseAgents(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+): Record<string, A2AAgentEntry> | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
+        if (Array.isArray(value)) {
+            pushConfigWarning(warnings, "outbound.agents must be an object, skipped");
+        }
         return undefined;
     }
     const raw = value as Record<string, unknown>;
     const result: Record<string, A2AAgentEntry> = {};
     for (const [id, entry] of Object.entries(raw)) {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            pushConfigWarning(warnings, `outbound.agents.${id}: entry must be an object, skipped`);
             continue;
         }
         const e = entry as Record<string, unknown>;
         const url = typeof e.url === "string" ? e.url.trim() : "";
         if (!url) {
+            pushConfigWarning(warnings, `outbound.agents.${id}: missing or empty url, skipped`);
             continue;
         }
         let custom_headers: Record<string, string> | undefined;
@@ -188,19 +216,41 @@ function parsePositiveNumber(value: unknown): number | undefined {
     return typeof value === "number" && value > 0 ? value : undefined;
 }
 
-function parseApiKeys(value: unknown): A2AInboundKey[] | undefined {
+function parseApiKeys(value: unknown, warnings?: ConfigParseWarnings): A2AInboundKey[] | undefined {
     if (!Array.isArray(value)) {
         return undefined;
     }
     const keys: A2AInboundKey[] = [];
-    for (const entry of value) {
+    for (const [index, entry] of value.entries()) {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            pushConfigWarning(
+                warnings,
+                `inbound.apiKeys[${index}]: entry must be an object, skipped`,
+            );
             continue;
         }
         const e = entry as Record<string, unknown>;
         const label = parseA2AInboundKeyLabel(e.label);
         const key = typeof e.key === "string" ? e.key : "";
-        if (!label || !key) {
+        if (!label && !key) {
+            pushConfigWarning(
+                warnings,
+                `inbound.apiKeys[${index}]: missing label and key, skipped`,
+            );
+            continue;
+        }
+        if (!label) {
+            pushConfigWarning(
+                warnings,
+                `inbound.apiKeys[${index}]: invalid or missing label, skipped`,
+            );
+            continue;
+        }
+        if (!key) {
+            pushConfigWarning(
+                warnings,
+                `inbound.apiKeys[${index}] (${label}): missing key, skipped`,
+            );
             continue;
         }
         keys.push({ label, key });
@@ -209,7 +259,11 @@ function parseApiKeys(value: unknown): A2AInboundKey[] | undefined {
     return keys.length > 0 ? keys : undefined;
 }
 
-function parseAgentCard(value: unknown): A2AAgentCardConfig | undefined {
+function parseAgentCard(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+    path = "inbound.agentCard",
+): A2AAgentCardConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
     }
@@ -217,7 +271,13 @@ function parseAgentCard(value: unknown): A2AAgentCardConfig | undefined {
     const name = typeof raw.name === "string" ? raw.name.trim() || undefined : undefined;
     const description =
         typeof raw.description === "string" ? raw.description.trim() || undefined : undefined;
-    const skills = parseSkills(raw.skills);
+    if (typeof raw.name === "string" && raw.name.trim().length === 0) {
+        pushConfigWarning(warnings, `${path}.name: empty string ignored`);
+    }
+    if (typeof raw.description === "string" && raw.description.trim().length === 0) {
+        pushConfigWarning(warnings, `${path}.description: empty string ignored`);
+    }
+    const skills = parseSkills(raw.skills, warnings, `${path}.skills`);
     if (name === undefined && description === undefined && skills === undefined) {
         return undefined;
     }
@@ -235,8 +295,14 @@ function parseAgentCard(value: unknown): A2AAgentCardConfig | undefined {
  */
 const INBOUND_AGENT_ID_PATTERN = /^(?!\.+$)[A-Za-z0-9._-]{1,64}$/;
 
-function parseInboundAgents(value: unknown): Record<string, A2AInboundAgentConfig> | undefined {
+function parseInboundAgents(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+): Record<string, A2AInboundAgentConfig> | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
+        if (Array.isArray(value)) {
+            pushConfigWarning(warnings, "inbound.agents must be an object, skipped");
+        }
         return undefined;
     }
     const raw = value as Record<string, unknown>;
@@ -244,12 +310,21 @@ function parseInboundAgents(value: unknown): Record<string, A2AInboundAgentConfi
     for (const [id, entry] of Object.entries(raw)) {
         const agentId = id.trim();
         if (!INBOUND_AGENT_ID_PATTERN.test(agentId)) {
+            pushConfigWarning(
+                warnings,
+                `inbound.agents.${id}: agent ID must match ^(?!\\.+$)[A-Za-z0-9._-]{1,64}$, skipped`,
+            );
             continue;
         }
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            pushConfigWarning(warnings, `inbound.agents.${id}: entry must be an object, skipped`);
             continue;
         }
-        const agentCard = parseAgentCard((entry as Record<string, unknown>).agentCard);
+        const agentCard = parseAgentCard(
+            (entry as Record<string, unknown>).agentCard,
+            warnings,
+            `inbound.agents.${agentId}.agentCard`,
+        );
         result[agentId] = agentCard ? { agentCard } : {};
     }
     return Object.keys(result).length > 0 ? result : undefined;
@@ -262,7 +337,8 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
     const raw = value as Record<string, unknown>;
     const provider = raw.provider === "rodit" ? "rodit" : undefined;
     const jwtCacheTtlSeconds = parsePositiveNumber(raw.jwtCacheTtlSeconds);
-    const logLevel = typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
+    const logLevel =
+        typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
 
     let credentialsEnv: A2AOutboundRoditCredentialsEnv | undefined;
     if (
@@ -303,12 +379,15 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
     };
 }
 
-function parseOutbound(value: unknown): A2AOutboundConfig | undefined {
+function parseOutbound(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+): A2AOutboundConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
     }
     const raw = value as Record<string, unknown>;
-    const agents = parseAgents(raw.agents);
+    const agents = parseAgents(raw.agents, warnings);
     const auth = parseOutboundAuth(raw.auth);
     const taskStore = typeof raw.taskStore === "boolean" ? raw.taskStore : undefined;
     const fileStore = typeof raw.fileStore === "boolean" ? raw.fileStore : undefined;
@@ -356,7 +435,8 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
         typeof raw.identityClaim === "string" ? raw.identityClaim.trim() || undefined : undefined;
     const allowApiKeyFallback =
         typeof raw.allowApiKeyFallback === "boolean" ? raw.allowApiKeyFallback : undefined;
-    const logLevel = typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
+    const logLevel =
+        typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
 
     if (
         provider === undefined &&
@@ -379,19 +459,25 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
     };
 }
 
-function parseInbound(value: unknown): A2AInboundConfig | undefined {
+function parseInbound(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+): A2AInboundConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
     }
     const raw = value as Record<string, unknown>;
-    const agentCard = parseAgentCard(raw.agentCard);
+    const agentCard = parseAgentCard(raw.agentCard, warnings);
     const auth = parseInboundAuth(raw.auth);
     const allowUnauthenticated =
         typeof raw.allowUnauthenticated === "boolean" ? raw.allowUnauthenticated : undefined;
-    const apiKeys = parseApiKeys(raw.apiKeys);
-    const agents = parseInboundAgents(raw.agents);
+    const apiKeys = parseApiKeys(raw.apiKeys, warnings);
+    const agents = parseInboundAgents(raw.agents, warnings);
     const publicBaseUrl =
         typeof raw.publicBaseUrl === "string" ? raw.publicBaseUrl.trim() || undefined : undefined;
+    if (typeof raw.publicBaseUrl === "string" && raw.publicBaseUrl.trim().length === 0) {
+        pushConfigWarning(warnings, "inbound.publicBaseUrl: empty string ignored");
+    }
 
     if (
         agentCard === undefined &&
@@ -413,13 +499,16 @@ function parseInbound(value: unknown): A2AInboundConfig | undefined {
     };
 }
 
-export function parseA2APluginConfig(value: unknown): A2APluginConfig {
+export function parseA2APluginConfig(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+): A2APluginConfig {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return {};
     }
     const raw = value as Record<string, unknown>;
-    const outbound = parseOutbound(raw.outbound);
-    const inbound = parseInbound(raw.inbound);
+    const outbound = parseOutbound(raw.outbound, warnings);
+    const inbound = parseInbound(raw.inbound, warnings);
 
     return {
         ...(outbound ? { outbound } : {}),

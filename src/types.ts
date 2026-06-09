@@ -2,18 +2,14 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
+
 export type AgentToolResult = {
     content: Array<{ type: "text"; text: string }>;
     details: unknown;
 };
 
-export type AgentTool = {
-    name: string;
-    label: string;
-    description: string;
-    parameters: unknown;
-    execute: (toolCallId: string, params: Record<string, unknown>) => Promise<AgentToolResult>;
-};
+export type AgentTool = AnyAgentTool;
 
 export function jsonResult(payload: unknown): AgentToolResult {
     return {

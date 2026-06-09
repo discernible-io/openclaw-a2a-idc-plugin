@@ -90,21 +90,17 @@ A 401 **without** a token only proves the auth gate is on. It does **not** prove
 
 ## Why bootstrap is a common source of mismatch
 
-On identyclaw hosts (e.g. dedalo43), `ensure_a2a_config` writes both `inbound.auth.audience` and `inbound.publicBaseUrl` from the same helper:
+On identyclaw hosts (e.g. dedalo43), `ensure_a2a_config` writes `inbound.auth.audience` from `agent_a2a_audience` and `inbound.publicBaseUrl` from `agent_a2a_public_base_url`:
 
 ```bash
 # scripts/lib.sh
 agent_a2a_audience() {
-  public_url="$(agent_a2a_public_base_url "$id")"
-  if [[ -n "$public_url" ]]; then
-    echo "$public_url"    # e.g. https://agent-a.identyclaw.com:9443
-  else
-    echo "http://$(agent_container "$id"):$(agent_internal_gateway_port "$id")"
-  fi
+  # AGENT_*_A2A_AUDIENCE when set; else public base URL or container DNS
+  ...
 }
 ```
 
-That produces a **full origin with scheme and port** in pod mode.
+When `AGENT_*_A2A_AUDIENCE` is unset, audience falls back to the same value as `publicBaseUrl` — which can mismatch live JWT `aud`.
 
 The fork README examples use **hostname only**:
 
@@ -183,15 +179,15 @@ Note: `publicBaseUrl` (discovery / Agent Card URLs) and `audience` (JWT validati
 
 ### 3. Fix identyclaw bootstrap (so new agents start correct)
 
-Preferred approaches (pick one after Tier 2 proves the convention):
+Bootstrap in `identyclaw-agents/scripts/lib.sh` supports a **separate audience env var**:
 
-| Approach | Description |
-|----------|-------------|
-| **Separate env var** | Add `AGENT_A_A2A_AUDIENCE` distinct from `AGENT_A_A2A_PUBLIC_BASE_URL`. Bootstrap writes `audience` from the audience var and `publicBaseUrl` from the public URL var. |
-| **Derive audience from public URL** | If live JWT uses hostname only, change `agent_a2a_audience()` to strip scheme/port (e.g. emit host from `public_base_url`). |
-| **Manual override until proven** | Document that operators must set audience by hand after first Tier 2 run on each host. |
+| Approach | Status |
+|----------|--------|
+| **Separate env var** | **Implemented** — `AGENT_*_A2A_AUDIENCE` overrides `inbound.auth.audience`; `AGENT_*_A2A_PUBLIC_BASE_URL` still drives `publicBaseUrl` only |
+| **Derive audience from public URL** | Fallback when `AGENT_*_A2A_AUDIENCE` is unset — copies public base URL (or container DNS in dev) |
+| **Manual override** | Set `AGENT_*_A2A_AUDIENCE` in `env.local` after Tier 2 decodes live JWT `aud` |
 
-Change `ensure_a2a_config` in `scripts/lib.sh` so it no longer blindly copies `publicBaseUrl` into `audience` unless Tier 2 confirms they are the same string.
+Set `AGENT_*_A2A_AUDIENCE` when live JWT `aud` differs from `publicBaseUrl` (common: hostname-only `aud` vs full `https://…:9443` URL).
 
 ### 4. Per-host env checklist (production)
 
@@ -282,7 +278,7 @@ Until Tier 2 passes on each host, treat production A2A as **configured but unpro
 | `outbound.auth.provider` | `openclaw.json` | `"rodit"` for dynamic JWT via `login_server` |
 | `IDENTYCLAW_*` env | agent secrets / `.env` | Outbound login credentials (not in `openclaw.json`) |
 | `AGENT_*_A2A_PUBLIC_BASE_URL` | identyclaw `env.local` | Bootstrap input for `publicBaseUrl` |
-| `AGENT_*_A2A_AUDIENCE` | identyclaw `env.local` (proposed) | Bootstrap input for `audience` — separate from public URL |
+| `AGENT_*_A2A_AUDIENCE` | identyclaw `env.local` | Bootstrap input for `audience` — overrides public URL when set |
 
 ---
 

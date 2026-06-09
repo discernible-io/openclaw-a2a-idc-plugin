@@ -46,6 +46,19 @@ openclaw gateway restart
 
 Follow the set up instructions in "🔐 IdentyClaw usage (RODiT peers)", "📤 Sending Messages (outbound)", and/or "📥 Receiving Messages (inbound)".
 
+### Complementary IdentyClaw artifacts
+
+This plugin handles **A2A wire protocol** (peer messaging). Install it alongside the other IdentyClaw OpenClaw integrations:
+
+| Artifact | Install | Role |
+| --- | --- | --- |
+| **This plugin** (`a2a`) | `openclaw plugins install @discernible-io/openclaw-a2a-idc-plugin` | A2A send/receive, RODiT JWT on `POST /a2a` |
+| IdentyClaw tools (`identyclaw-tools`) | `openclaw plugins install clawhub:@identyclaw/openclaw-identyclaw-plugin` | API login, HOLA, identity, DID — [`openclaw-identyclaw-plugin`](https://github.com/discernible-io/openclaw-identyclaw-plugin) |
+| Skill (workflows) | `openclaw skills install clawhub:identyclaw` | Operator playbooks and reference docs |
+| MCP (canonical docs) | `https://api.identyclaw.com/mcp` | Live IdentyClaw API documentation |
+
+Both plugins share `IDENTYCLAW_ACCOUNT_ID`, `IDENTYCLAW_NEAR_PRIVATE_KEY`, and `IDENTYCLAW_BASE_URL`. HOLA stays application-layer via `identyclaw_*` tools; A2A peer calls use Passport JWTs automatically.
+
 ## 🔐 IdentyClaw usage (RODiT peers)
 
 This fork authenticates A2A peers with **RODiT / Passport JWTs** via [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be), instead of pre-shared A2A API keys. Outbound callers log in with NEAR Passport credentials; inbound peers present short-lived JWTs signed by the IdentyClaw API.

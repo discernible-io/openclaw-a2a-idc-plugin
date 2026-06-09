@@ -58,6 +58,49 @@ describe("parseA2APluginConfig", () => {
         });
     });
 
+    test("collects warnings for silently dropped config entries", () => {
+        const warnings: string[] = [];
+        const result = parseA2APluginConfig(
+            {
+                outbound: {
+                    agents: {
+                        valid: { url: "https://example.com" },
+                        invalid: { url: "  " },
+                        bad: "not-an-object",
+                    },
+                },
+                inbound: {
+                    publicBaseUrl: "   ",
+                    apiKeys: [{ label: "", key: "abc" }],
+                    agents: {
+                        swe: { agentCard: { name: "SWE" } },
+                        "bad id": { agentCard: { name: "Bad" } },
+                    },
+                    agentCard: {
+                        skills: [
+                            { id: "ok", name: "OK", description: "Fine" },
+                            { id: "", name: "X" },
+                        ],
+                    },
+                },
+            },
+            warnings,
+        );
+
+        expect(result.outbound?.agents).toEqual({ valid: { url: "https://example.com" } });
+        expect(result.inbound?.agents).toEqual({ swe: { agentCard: { name: "SWE" } } });
+        expect(warnings).toEqual(
+            expect.arrayContaining([
+                "outbound.agents.invalid: missing or empty url, skipped",
+                "outbound.agents.bad: entry must be an object, skipped",
+                "inbound.publicBaseUrl: empty string ignored",
+                "inbound.apiKeys[0]: invalid or missing label, skipped",
+                "inbound.agents.bad id: agent ID must match ^(?!\\.+$)[A-Za-z0-9._-]{1,64}$, skipped",
+                "inbound.agentCard.skills[1]: missing required field(s) (id, description), skipped",
+            ]),
+        );
+    });
+
     test("parses outbound numeric options", () => {
         const result = parseA2APluginConfig({
             outbound: {

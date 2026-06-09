@@ -24,12 +24,12 @@
     "openclaw": {
         "extensions": ["./dist/index.js"],
         "compat": {
-            "pluginApi": ">=2026.4.8",
-            "minGatewayVersion": "2026.4.8"
+            "pluginApi": ">=2026.5.17",
+            "minGatewayVersion": "2026.5.17"
         },
         "build": {
-            "openclawVersion": "2026.4.8",
-            "pluginSdkVersion": "2026.4.8"
+            "openclawVersion": "2026.5.17",
+            "pluginSdkVersion": "2026.5.17"
         }
     },
     "keywords": ["a2a", "agent-to-agent", "openclaw", "plugin"],
@@ -53,13 +53,13 @@
         "zod-to-json-schema": "^3.25.1"
     },
     "peerDependencies": {
-        "openclaw": ">=2026.4.8"
+        "openclaw": ">=2026.5.17"
     },
     "devDependencies": {
         "@biomejs/biome": "^1.9.0",
         "@types/bun": "latest",
         "@types/ws": "^8.0.0",
-        "openclaw": "^2026.4.8",
+        "openclaw": "^2026.5.17",
         "typescript": "^5.7.0"
     },
     "trustedDependencies": ["@biomejs/biome"]

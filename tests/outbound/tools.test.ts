@@ -24,7 +24,7 @@ afterAll(() => {
 
 describe("createOutboundTools", () => {
     test("returns 6 tools", () => {
-        const tools = createOutboundTools({
+        const { tools } = createOutboundTools({
             agents: { test: { url: "https://example.com/agent-card.json" } },
             stateDir: tmpDir(),
             workspaceDir: tmpDir(),
@@ -33,7 +33,7 @@ describe("createOutboundTools", () => {
     });
 
     test("tool names are correct", () => {
-        const tools = createOutboundTools({
+        const { tools } = createOutboundTools({
             agents: { test: { url: "https://example.com/agent-card.json" } },
             stateDir: tmpDir(),
             workspaceDir: tmpDir(),
@@ -50,7 +50,7 @@ describe("createOutboundTools", () => {
     });
 
     test("all tools have descriptions and parameters", () => {
-        const tools = createOutboundTools({
+        const { tools } = createOutboundTools({
             agents: { test: { url: "https://example.com/agent-card.json" } },
             stateDir: tmpDir(),
             workspaceDir: tmpDir(),
@@ -63,7 +63,7 @@ describe("createOutboundTools", () => {
     });
 
     test("accepts all outbound config options", () => {
-        const tools = createOutboundTools({
+        const { tools } = createOutboundTools({
             agents: { test: { url: "https://example.com/agent-card.json" } },
             stateDir: tmpDir(),
             workspaceDir: tmpDir(),
@@ -81,7 +81,7 @@ describe("createOutboundTools", () => {
     });
 
     test("disabling stores does not error", () => {
-        const tools = createOutboundTools({
+        const { tools } = createOutboundTools({
             agents: { test: { url: "https://example.com/agent-card.json" } },
             stateDir: tmpDir(),
             workspaceDir: tmpDir(),
@@ -93,7 +93,7 @@ describe("createOutboundTools", () => {
 
     test("uses correct storage paths", () => {
         const dir = tmpDir();
-        createOutboundTools({
+        const { tools: _tools } = createOutboundTools({
             agents: { test: { url: "https://example.com/agent-card.json" } },
             stateDir: dir,
             workspaceDir: dir,

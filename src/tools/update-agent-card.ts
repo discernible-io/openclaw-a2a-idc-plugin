@@ -45,10 +45,11 @@ export function createUpdateAgentCardTool(deps: UpdateAgentCardDeps): AgentTool 
             ),
         }),
         async execute(_toolCallId, params) {
-            const name = typeof params.name === "string" ? params.name.trim() : undefined;
+            const toolParams = params as Record<string, unknown>;
+            const name = typeof toolParams.name === "string" ? toolParams.name.trim() : undefined;
             const description =
-                typeof params.description === "string" ? params.description.trim() : undefined;
-            const skills = Array.isArray(params.skills) ? params.skills : undefined;
+                typeof toolParams.description === "string" ? toolParams.description.trim() : undefined;
+            const skills = Array.isArray(toolParams.skills) ? toolParams.skills : undefined;
 
             if (!name && !description && !skills) {
                 return jsonResult({

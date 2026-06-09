@@ -5,7 +5,11 @@
 import { describe, expect, test } from "bun:test";
 import type { IncomingMessage } from "node:http";
 
-import { resolvePublicBaseUrl, resolveRequestPublicUrl } from "../../src/inbound/public-url.js";
+import {
+    resolvePublicBaseUrl,
+    resolveRequestPublicUrl,
+    resolveStartupPublicBaseUrl,
+} from "../../src/inbound/public-url.js";
 
 function fakeReq(headers: Record<string, string | undefined>, encrypted = false): IncomingMessage {
     return {
@@ -71,5 +75,21 @@ describe("resolvePublicBaseUrl", () => {
         expect(resolvePublicBaseUrl(fakeReq({ host: "openclaw-agent-b:18789" }), "   ")).toBe(
             "http://openclaw-agent-b:18789",
         );
+    });
+});
+
+describe("resolveStartupPublicBaseUrl", () => {
+    test("uses configured publicBaseUrl when set", () => {
+        expect(resolveStartupPublicBaseUrl("https://agent-a.example.com/")).toBe(
+            "https://agent-a.example.com",
+        );
+    });
+
+    test("falls back to localhost when publicBaseUrl is unset", () => {
+        expect(resolveStartupPublicBaseUrl(undefined)).toBe("http://localhost");
+    });
+
+    test("falls back to localhost for blank publicBaseUrl", () => {
+        expect(resolveStartupPublicBaseUrl("   ")).toBe("http://localhost");
     });
 });

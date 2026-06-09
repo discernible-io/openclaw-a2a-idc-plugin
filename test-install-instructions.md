@@ -178,7 +178,7 @@ curl -sf https://agent-b.example.com/.well-known/agent-card.json
 | Field | Must match |
 | ----- | ---------- |
 | `inbound.publicBaseUrl` | Public origin peers use to call this agent |
-| `inbound.auth.audience` | JWT `aud` from IdentyClaw login (usually the public hostname) |
+| `inbound.auth.audience` | JWT `aud` from IdentyClaw login — set `AGENT_*_A2A_AUDIENCE` when it differs from `publicBaseUrl` |
 | `outbound.agents.<id>.url` | Remote peer's **public** Agent Card URL |
 
 If `audience` does not match the live JWT `aud`, every inbound A2A request returns **401**. See [`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md).

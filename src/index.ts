@@ -31,7 +31,8 @@ import {
     multiAgentCardPath,
     multiAgentRpcPath,
 } from "./inbound/paths.js";
-import { resolvePublicBaseUrl } from "./inbound/public-url.js";
+import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
+import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
 import { createOutboundTools } from "./outbound/tools.js";
 import { createUpdateAgentCardTool } from "./tools/update-agent-card.js";
 import {
@@ -144,6 +145,31 @@ function isInboundConfigured(pluginConfig: A2APluginConfig): boolean {
         inbound?.auth?.provider === "rodit" ||
         (inbound?.apiKeys !== undefined && inbound.apiKeys.length > 0)
     );
+}
+
+function describeInboundAuthMode(pluginConfig: A2APluginConfig): string {
+    const inbound = pluginConfig.inbound;
+    if (inbound?.allowUnauthenticated) {
+        return "unauthenticated";
+    }
+
+    const provider = inbound?.auth?.provider ?? "apiKey";
+    if (provider === "none") {
+        return "none";
+    }
+    if (provider === "rodit") {
+        const parts = ["rodit"];
+        if (inbound?.auth?.allowApiKeyFallback && (inbound.apiKeys?.length ?? 0) > 0) {
+            parts.push(`apiKey-fallback(${inbound.apiKeys?.length ?? 0})`);
+        }
+        return parts.join("+");
+    }
+
+    return `apiKey(${inbound?.apiKeys?.length ?? 0})`;
+}
+
+function formatStartupError(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
 }
 
 function registerCli(api: OpenClawPluginApi, pluginConfig: A2APluginConfig): void {
@@ -289,7 +315,11 @@ const a2aPlugin = definePluginEntry({
     },
 
     register(api: OpenClawPluginApi) {
-        const pluginConfig = parseA2APluginConfig(api.pluginConfig);
+        const configWarnings: string[] = [];
+        const pluginConfig = parseA2APluginConfig(api.pluginConfig, configWarnings);
+        for (const warning of configWarnings) {
+            api.logger.warn(`[a2a] Config: ${warning}`);
+        }
 
         registerCli(api, pluginConfig);
 
@@ -385,11 +415,15 @@ const a2aPlugin = definePluginEntry({
 
         // --- Outbound tools (via @a2anet/a2a-utils) ---
         const outbound = pluginConfig.outbound;
-        if (outbound?.agents && Object.keys(outbound.agents).length > 0) {
+        let outboundAgents: AuthenticatedA2AAgents | undefined;
+        const configuredOutboundAgentCount = outbound?.agents
+            ? Object.keys(outbound.agents).length
+            : 0;
+        if (outbound?.agents && configuredOutboundAgentCount > 0) {
             if (outbound.auth?.provider === "rodit") {
                 api.logger.info("[a2a] Outbound auth enabled with RODiT JWT login");
             }
-            const tools = createOutboundTools({
+            const outboundTools = createOutboundTools({
                 agents: outbound.agents,
                 auth: outbound.auth,
                 stateDir,
@@ -404,11 +438,12 @@ const a2aPlugin = definePluginEntry({
                 minimizedObjectStringLength: outbound.minimizedObjectStringLength,
                 viewArtifactCharacterLimit: outbound.viewArtifactCharacterLimit,
             });
-            for (const tool of tools) {
+            outboundAgents = outboundTools.agents;
+            for (const tool of outboundTools.tools) {
                 api.registerTool(tool);
             }
             api.logger.info(
-                `[a2a] Registered ${tools.length} outbound tools for ${Object.keys(outbound.agents).length} agent(s)`,
+                `[a2a] Registered ${outboundTools.tools.length} outbound tools for ${configuredOutboundAgentCount} agent(s)`,
             );
         }
 
@@ -543,6 +578,9 @@ const a2aPlugin = definePluginEntry({
                 })
                 .catch((err) => {
                     runtime.initPromise = null;
+                    api.logger.error(
+                        `[a2a] Inbound endpoint "${agentId}" failed to initialize: ${formatStartupError(err)}`,
+                    );
                     throw err;
                 });
             return runtime.initPromise;
@@ -611,6 +649,71 @@ const a2aPlugin = definePluginEntry({
         api.registerService({
             id: "a2a",
             start: async () => {
+                const startupCaveats: string[] = [];
+                let inboundInitFailures = 0;
+                let outboundLoadedCount = 0;
+                let outboundInitFailures = 0;
+
+                const startupPublicUrl = resolveStartupPublicBaseUrl(configuredPublicBaseUrl);
+                if (!configuredPublicBaseUrl?.trim()) {
+                    startupCaveats.push(
+                        "inbound.publicBaseUrl unset; Agent Card URLs use http://localhost until configured or derived from the first request",
+                    );
+                }
+
+                for (const runtime of endpointRuntimes.values()) {
+                    try {
+                        await initializeEndpoint(runtime, startupPublicUrl);
+                    } catch {
+                        inboundInitFailures += 1;
+                    }
+                }
+
+                if (outboundAgents) {
+                    try {
+                        await outboundAgents.warmUp();
+                        outboundLoadedCount = Object.keys(await outboundAgents.getAgents()).length;
+                        for (const [agentId, error] of Object.entries(
+                            outboundAgents.initializationErrors,
+                        )) {
+                            outboundInitFailures += 1;
+                            api.logger.error(
+                                `[a2a] Outbound agent "${agentId}" failed to load: ${error}`,
+                            );
+                        }
+                    } catch (err) {
+                        api.logger.error(
+                            `[a2a] Outbound agent prefetch failed: ${formatStartupError(err)}`,
+                        );
+                        startupCaveats.push(
+                            "outbound agent card prefetch failed (see error above)",
+                        );
+                    }
+                }
+
+                const endpointSummary = inboundEndpoints
+                    .map((endpoint) => endpoint.rpcPath)
+                    .join(", ");
+                const authMode = describeInboundAuthMode(pluginConfig);
+                const summaryParts = [
+                    `inbound endpoints=[${endpointSummary}]`,
+                    `auth=${authMode}`,
+                    `outbound agents=${configuredOutboundAgentCount}`,
+                ];
+                if (outboundAgents) {
+                    summaryParts.push(`outbound loaded=${outboundLoadedCount}`);
+                }
+                if (inboundInitFailures > 0) {
+                    summaryParts.push(`inbound init failures=${inboundInitFailures}`);
+                }
+                if (outboundInitFailures > 0) {
+                    summaryParts.push(`outbound init failures=${outboundInitFailures}`);
+                }
+                if (startupCaveats.length > 0) {
+                    summaryParts.push(`caveats: ${startupCaveats.join("; ")}`);
+                }
+
+                api.logger.info(`[a2a] Startup summary: ${summaryParts.join(", ")}`);
                 api.logger.info("[a2a] A2A service started");
             },
             stop: async () => {

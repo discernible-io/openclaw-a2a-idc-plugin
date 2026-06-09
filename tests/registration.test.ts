@@ -31,6 +31,8 @@ type CapturedHttpRoute = {
 
 type CapturedService = {
     id: string;
+    start?: () => unknown | Promise<unknown>;
+    stop?: () => unknown | Promise<unknown>;
 };
 
 class FakeCommand {
@@ -145,7 +147,11 @@ function createApi(options?: {
             registerChannel() {},
             registerGatewayMethod() {},
             registerService(service: CapturedService) {
-                services.push({ id: service.id });
+                services.push({
+                    id: service.id,
+                    start: service.start,
+                    stop: service.stop,
+                });
             },
             registerNodeHostCommand() {},
             registerSecurityAuditCollector() {},
@@ -293,6 +299,48 @@ describe("plugin registration", () => {
                 ],
             },
         ]);
+    });
+
+    test("start service eagerly initializes inbound and logs a startup summary", async () => {
+        const logLines: Array<{ level: string; message: string }> = [];
+        const { api, services } = createApi({
+            pluginConfig: {
+                inbound: {
+                    apiKeys: [{ label: "test", key: "secret" }],
+                    agentCard: { name: "Test Agent" },
+                },
+            },
+        });
+        api.logger.info = (message: string) => {
+            logLines.push({ level: "info", message });
+        };
+        api.logger.warn = (message: string) => {
+            logLines.push({ level: "warn", message });
+        };
+        api.logger.error = (message: string) => {
+            logLines.push({ level: "error", message });
+        };
+
+        plugin.register(api as never);
+
+        const service = services.find((entry) => entry.id === "a2a");
+        expect(service?.start).toBeDefined();
+        await service?.start?.();
+
+        expect(logLines.some((line) => line.message.includes("[a2a] Startup summary:"))).toBe(true);
+        expect(
+            logLines.some((line) => line.message.includes("[a2a] Inbound server initialized:")),
+        ).toBe(true);
+        expect(logLines.some((line) => line.message.includes("[a2a] A2A service started"))).toBe(
+            true,
+        );
+        expect(
+            logLines.some((line) =>
+                line.message.includes(
+                    "inbound.publicBaseUrl unset; Agent Card URLs use http://localhost",
+                ),
+            ),
+        ).toBe(true);
     });
 
     test("revoke-key matches labels case-insensitively", async () => {

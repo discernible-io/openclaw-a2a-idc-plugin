@@ -40,3 +40,12 @@ export function resolvePublicBaseUrl(
     }
     return resolveRequestPublicUrl(req);
 }
+
+/** Base URL used for eager inbound initialization when no HTTP request is available. */
+export function resolveStartupPublicBaseUrl(configuredPublicBaseUrl?: string): string {
+    const configured = configuredPublicBaseUrl?.trim();
+    if (configured) {
+        return configured.replace(/\/$/, "");
+    }
+    return "http://localhost";
+}

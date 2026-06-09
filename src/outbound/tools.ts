@@ -11,6 +11,7 @@ import {
     JSONTaskStore,
     LocalFileStore,
 } from "@a2anet/a2a-utils";
+import type { TSchema } from "@sinclair/typebox";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { createRoditOutboundAuthProvider } from "../auth/rodit-outbound.js";
@@ -35,6 +36,11 @@ export type CreateOutboundToolsParams = {
     viewArtifactCharacterLimit?: number;
 };
 
+export type CreateOutboundToolsResult = {
+    tools: AgentTool[];
+    agents: AuthenticatedA2AAgents;
+};
+
 /**
  * Create the 6 outbound A2A tools backed by @a2anet/a2a-utils.
  *
@@ -42,7 +48,7 @@ export type CreateOutboundToolsParams = {
  * format. Tool metadata (name, description, schema) comes from a2a-utils;
  * the `a2a_` prefix is added here for OpenClaw namespacing.
  */
-export function createOutboundTools(params: CreateOutboundToolsParams): AgentTool[] {
+export function createOutboundTools(params: CreateOutboundToolsParams): CreateOutboundToolsResult {
     const authProvider = createRoditOutboundAuthProvider(params.auth);
     const agents = new AuthenticatedA2AAgents(params.agents, authProvider, params.agentCardTimeout);
 
@@ -71,17 +77,19 @@ export function createOutboundTools(params: CreateOutboundToolsParams): AgentToo
 
     const tools = new A2ATools(session, { artifactSettings });
 
-    return (tools.tools as A2AToolDefinition[]).map((def) => {
+    const agentTools = (tools.tools as A2AToolDefinition[]).map((def) => {
         const { $schema: _, ...jsonSchema } = zodToJsonSchema(def.schema, { target: "openAi" });
         return {
             name: `a2a_${def.name}`,
             label: `a2a_${def.name}`,
             description: def.description,
-            parameters: jsonSchema,
+            parameters: jsonSchema as TSchema,
             execute: async (_toolCallId: string, toolParams: Record<string, unknown>) =>
                 withOutboundAuthRetry(authProvider, async () =>
                     jsonResult(await def.execute(toolParams)),
                 ),
         };
     });
+
+    return { tools: agentTools, agents };
 }

@@ -58,6 +58,11 @@ export class AuthenticatedA2AAgents {
         return this.inner.initializationErrors;
     }
 
+    /** Prefetch remote agent cards (and outbound auth tokens when configured). */
+    async warmUp(): Promise<void> {
+        await this.getAgents();
+    }
+
     private async mergeAuthHeaders(
         agent: AgentURLAndCustomHeaders,
     ): Promise<AgentURLAndCustomHeaders> {
