@@ -2,7 +2,7 @@
 
 Fork [`@a2anet/openclaw-a2a-plugin`](https://github.com/a2anet/openclaw-a2a-plugin) into an IdentyClaw-maintained variant that authenticates peer agents with **RODiT / Passport JWTs** (`@rodit/rodit-auth-be`) instead of static pairwise API keys.
 
-Related context: [`security-compliance-improvements.md`](security-compliance-improvements.md) (A2A networking and baseline checklist).
+Related context: [`security-compliance-improvements.md`](security-compliance-improvements.md) (A2A networking and baseline checklist); [`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md) (JWT `aud` / `inbound.auth.audience` alignment — fix via OpenClaw config, not `rodit-auth-be`).
 
 ---
 
@@ -16,10 +16,11 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 | **3 — publicBaseUrl** | **Done (plugin)** | Config + URL resolution implemented |
 | **4 — identyclaw integration** | **Done** | `ensure_a2a_config`, `identyclaw-net`, `test-a2a` in identyclaw-openclaw (same-host dev) |
 | 5 — Multi-machine deploy | **Next** | One agent per host; public URLs + TLS; cross-host A2A |
+| **8 — Passport metadata auto-config** | **Planned** | Derive A2A URLs from on-chain `webhook_url`; see [Phase 8](#phase-8--passport-metadata-auto-config-planned) |
 | 6 — Live testing | Not started | Tier 2–3 on separate machines |
 | 7 — Publish | Not started | npm + ClawHub after Tier 3 passes |
 
-**Active step:** Deploy agents on **separate machines**, run Tier 2–3 live smoke, then publish (Phases 5–7).
+**Active step:** Deploy agents on **separate machines**, run Tier 2–3 live smoke, then publish (Phases 5–7). Phase 8 can land in parallel with Phase 5 to reduce manual `env.local` / `outbound.agents` wiring.
 
 > **Deployment constraint:** Production peers (e.g. Juanelo on host A, Archimedes on host B) run on **different machines**. Same-host `identyclaw-net` + container DNS is a **dev/staging shortcut only** — not the target topology.
 
@@ -42,6 +43,7 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 | Outbound calls use login, not static secrets | `a2a_send_message` obtains/refreshes JWT from local Passport credentials |
 | No gateway core changes | All work stays in the forked plugin + identyclaw bootstrap |
 | Compatible with identyclaw stack | One identyclaw agent per host; peers reach each other via public HTTPS (or private VPN); same-host `identyclaw-net` for local smoke only |
+| Metadata-driven discovery where possible | Own + peer A2A URLs derived from Passport `webhook_url` on-chain; env vars remain overrides |
 
 ## Non-goals (v1)
 
@@ -49,6 +51,7 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 - Public internet exposure without TLS (Tailscale/reverse proxy remains operator concern)
 - Full HOLA handshake on every A2A message (HOLA stays application-layer via `identyclaw-tools`; wire auth is JWT)
 - Upstreaming RODiT support to `@a2anet/openclaw-a2a-plugin` (nice-to-have later)
+- Full `RoditClient.create('server')` in the plugin (session store, server middleware) — use exported `blockchainService` + `login_server` only
 
 ---
 
@@ -113,7 +116,28 @@ Do **not** put A2A under `/hooks/a2a` unless willing to rewrite Agent Card URLs 
 5. Terminate TLS at Caddy/nginx/Cloudflare; proxy `/a2a` and `/.well-known/agent-card.json`.
 6. Ensure `inbound.auth.audience` and `inbound.publicBaseUrl` match the public URL peers use to call that agent.
 
-Cross-machine bootstrap is **manual or per-host env today** — `ensure_a2a_config()` auto-wires container-DNS peers only when multiple agents share one host. For split hosts, edit `outbound.agents` (or extend bootstrap with remote peer URLs from env).
+Cross-machine bootstrap is **manual or per-host env today** — `ensure_a2a_config()` auto-wires container-DNS peers only when multiple agents share one host. For split hosts, edit `outbound.agents` (or extend bootstrap with remote peer URLs from env). [Phase 8](#phase-8--passport-metadata-auto-config-planned) replaces much of this manual wiring with on-chain Passport metadata.
+
+### Passport metadata layout (IdentyClaw / `idclawserver-idc`)
+
+IdentyClaw documents `webhook_url` as the **OpenClaw gateway base** (no hook path). IdentyClaw appends `/hooks/agent`, `/hooks/wake`, etc. when sending. The same base is the A2A ingress origin:
+
+```text
+Passport metadata webhook_url:     https://agent-a.identyclaw.com:9443
+Webhook delivery:                  https://agent-a.identyclaw.com:9443/hooks/agent
+A2A JSON-RPC:                      https://agent-a.identyclaw.com:9443/a2a
+Agent Card:                        https://agent-a.identyclaw.com:9443/.well-known/agent-card.json
+```
+
+| Metadata field | A2A / bootstrap use |
+|----------------|---------------------|
+| `webhook_url` | `inbound.publicBaseUrl`; peer `outbound.agents.<id>.url` → `{webhook_url}/.well-known/agent-card.json` |
+| `subjectuniqueidentifier_url` | `inbound.auth.issuer`; `IDENTYCLAW_BASE_URL` (today hardcoded in identyclaw `sync_identyclaw_env`) |
+| `jwt_duration` | Hint for `outbound.auth.jwtCacheTtlSeconds` (with safety margin) |
+| `owner_id` | Hint for `inbound.auth.audience` — **must still match live JWT `aud`** ([`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md)) |
+| JWT claim `rodit_webhookurl` | Caller's declared public base on inbound A2A (from `peer_rodit.metadata.webhook_url` at login) |
+
+Public `GET /api/agents` does **not** expose `webhook_url` (only `tokenId`, `creature`, `face`). Peer discovery requires **NEAR chain lookup** (`nearorg_rpc_tokenfromroditid`) or authenticated `GET /api/identity/token/{tokenId}/full` — not the public agents list alone.
 
 ---
 
@@ -215,6 +239,9 @@ Both repos are private to the Discernible org — clone locally when implementin
 | **Outbound** — obtain JWT | Client `login_server` / env credentials | `RoditOutboundAuthProvider` in `src/auth/rodit-outbound.ts` → `login_server` against `IDENTYCLAW_BASE_URL` |
 | **Outbound** — attach Bearer | Client HTTP wrapper | `AuthenticatedA2AAgents` + `withOutboundAuthRetry` in `src/outbound/` |
 | **Outbound** — refresh on 401 | Client retry policy | `invalidate()` + single retry in `src/outbound/retry.ts` |
+| **Auto-config** — own public base | Passport `webhook_url` + `getConfigOwnRodit().own_rodit.metadata` (server) | `blockchainService.nearorg_rpc_tokensfromaccountid` in bootstrap / `src/auth/rodit-metadata.ts` (Phase 8) |
+| **Auto-config** — peer Agent Card URL | Operator registers peer `webhook_url` on-chain | `nearorg_rpc_tokenfromroditid(peerTokenId)` → `{webhook_url}/.well-known/agent-card.json` (Phase 8B) |
+| **Auto-config** — caller public base on inbound | JWT embeds `rodit_webhookurl` from caller metadata at login | Read from validated JWT payload (Phase 8D) |
 
 ### npm dependency rule
 
@@ -473,6 +500,160 @@ Per host (operator task, not plugin code):
 
 ---
 
+## Phase 8 — Passport metadata auto-config *(planned)*
+
+Reduce manual `AGENT_*_A2A_PUBLIC_BASE_URL` and `outbound.agents` editing by reading Passport metadata from `@rodit/rodit-auth-be` blockchain helpers. Aligns with how [`idclawserver-idc`](https://github.com/discernible-io/idclawserver-idc) uses `RoditClient.getConfigOwnRodit()` for server `subjectuniqueidentifier_url`, and how [`references/openclaw-integration-guide.md`](https://github.com/discernible-io/idclawserver-idc/blob/main/references/openclaw-integration-guide.md) documents `webhook_url` as the gateway base.
+
+**Integration rule (unchanged):** call [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be) only — do **not** vendor `idclawserver-idc` or initialize full `RoditClient.create('server')` in the plugin. Use exported `blockchainService.nearorg_rpc_tokensfromaccountid` / `nearorg_rpc_tokenfromroditid` and existing `login_server`.
+
+### 8.1 Problem statement
+
+| Gap today | Impact |
+|-----------|--------|
+| Bootstrap sets `inbound.publicBaseUrl` + `audience` from `AGENT_*_A2A_PUBLIC_BASE_URL` env | Drift from Passport `webhook_url`; `audience` often wrong vs live JWT `aud` |
+| `build_a2a_peer_map` uses container DNS (`http://openclaw-agent-b:18789/...`) | Broken in pod mode; wrong for cross-machine prod |
+| `sync_identyclaw_env` hardcodes `IDENTYCLAW_BASE_URL=https://api.identyclaw.com` | Ignores per-Passport `subjectuniqueidentifier_url` |
+| Plugin `buildLoginConfig` passes synthetic metadata (only `subjectuniqueidentifier_url` from env) | Never loads on-chain Passport fields (`webhook_url`, `jwt_duration`, `token_id`) |
+| Operators must manually register `webhook_url` on Passport **and** duplicate it in `env.local` | Two sources of truth |
+
+### 8.2 Design principles
+
+1. **On-chain `webhook_url` is the canonical public base** when present; env vars (`AGENT_*_A2A_PUBLIC_BASE_URL`) override for emergencies / staging.
+2. **`publicBaseUrl` ≠ `audience`** — discovery URL and JWT validation string serve different roles; never copy one into the other without Tier 2 proof.
+3. **`audience` comes from a live JWT** — decode `aud` after `login_server`; optionally cross-check against on-chain `owner_id` as a hint only.
+4. **Lazy + cache** — chain lookups at bootstrap (identyclaw) or first plugin auth call; cache in memory with TTL; mock in Tier 1 unit tests.
+5. **Warn, don't silently overwrite** — if env `publicBaseUrl` ≠ chain `webhook_url`, log a bootstrap warning (operator may be mid-migration).
+
+### 8.3 Implementation phases
+
+#### Phase 8A — identyclaw bootstrap *(identyclaw-agents `scripts/lib.sh`)*
+
+**Goal:** `ensure_a2a_config` derives A2A config from Passport metadata before writing `openclaw.json`.
+
+| Step | Action |
+|------|--------|
+| 8A.1 | Add `resolve_passport_metadata(account_id)` helper — Node script using `blockchainService.nearorg_rpc_tokensfromaccountid` from agent container or host (same NEAR RPC as SDK defaults) |
+| 8A.2 | **Own agent:** if `metadata.webhook_url` set and `AGENT_*_A2A_PUBLIC_BASE_URL` unset → set `inbound.publicBaseUrl` from `webhook_url` (trim trailing slash) |
+| 8A.3 | **Own agent:** set `inbound.auth.issuer` from `metadata.subjectuniqueidentifier_url` when present (else `IDENTYCLAW_API_BASE_URL` env) |
+| 8A.4 | **Own agent:** sync `IDENTYCLAW_BASE_URL` in `.env` from `subjectuniqueidentifier_url` instead of hardcoding `api.identyclaw.com` |
+| 8A.5 | **Audience (Tier 2 gate):** after metadata load, run one `login_server` smoke → decode JWT `aud` → write `inbound.auth.audience` to exact value; add optional `AGENT_*_A2A_AUDIENCE` env override |
+| 8A.6 | **Mismatch lint:** compare `webhook_url` vs `agent_a2a_public_base_url()` / ingress URL → stderr warning if differ |
+| 8A.7 | Document in `env.example`: `webhook_url` on Passport should match ingress; env vars override chain |
+
+**Exit criteria 8A:** `./identyclaw.sh restart agent-a` with only `secrets/near-credentials/*.json` + pod ingress (no `AGENT_A_A2A_PUBLIC_BASE_URL`) still sets correct `publicBaseUrl` when Passport `webhook_url` is registered.
+
+#### Phase 8B — peer outbound from chain *(identyclaw-agents `scripts/lib.sh`)*
+
+**Goal:** Replace container-DNS peer URLs with HTTPS Agent Card URLs from peer Passport metadata.
+
+| Step | Action |
+|------|--------|
+| 8B.1 | Extend peer config: map `A2A_PEER_AGENTS` entry → Passport `token_id` via env, e.g. `A2A_PEER_AGENT_B_TOKEN_ID=abc123def456` (or JSON map in `env.local`) |
+| 8B.2 | For each peer with `token_id`, `nearorg_rpc_tokenfromroditid(token_id)` → `metadata.webhook_url` |
+| 8B.3 | Set `outbound.agents.<peer_id>.url` = `{webhook_url}/.well-known/agent-card.json` |
+| 8B.4 | **Pod mode fallback:** when peer on same host and `webhook_url` unset, keep `http://127.0.0.1:<internal_port>/.well-known/agent-card.json` (not container DNS) |
+| 8B.5 | Skip peers without `token_id` or without `webhook_url` — log actionable message (register metadata or set manual URL) |
+
+**Exit criteria 8B:** cross-machine `outbound.agents` auto-wired from peer `webhook_url` when `A2A_PEER_*_TOKEN_ID` env is set; Tier 3 `a2a_send_message` discovers remote Agent Card without hand-editing `openclaw.json`.
+
+#### Phase 8C — plugin metadata helper *(this fork)*
+
+**Goal:** Plugin can fill gaps when bootstrap did not run or config is partial.
+
+| Step | Action |
+|------|--------|
+| 8C.1 | Add `src/auth/rodit-metadata.ts` — `resolveOwnPassportMetadata(credentials)` wrapping `blockchainService.nearorg_rpc_tokensfromaccountid` |
+| 8C.2 | On first outbound `login_server` or inbound RODiT auth (lazy), if `inbound.publicBaseUrl` unset and chain returns `webhook_url` → apply via existing config merge path |
+| 8C.3 | Optional: set `jwtCacheTtlSeconds` from `metadata.jwt_duration` when not explicitly configured |
+| 8C.4 | Export injectable `PassportMetadataResolver` for Tier 1 mocks (no NEAR in CI) |
+| 8C.5 | Unit tests: mock resolver returns `webhook_url` → `publicBaseUrl` applied; env override wins |
+
+**Exit criteria 8C:** plugin-only install (no identyclaw bootstrap) still discovers `publicBaseUrl` from chain when credentials present.
+
+#### Phase 8D — inbound dynamic peer registry *(optional v2)*
+
+**Goal:** Learn peer public bases from inbound JWTs without pre-configured `outbound.agents`.
+
+| Step | Action |
+|------|--------|
+| 8D.1 | After successful inbound JWT validation, read `rodit_webhookurl` and `rodit_id` / `token_id` from payload |
+| 8D.2 | Upsert ephemeral or persisted outbound peer entry: `{token_id} → {rodit_webhookurl}/.well-known/agent-card.json` |
+| 8D.3 | Gate behind config flag `outbound.dynamicPeersFromJwt: true` (default off in v1) |
+| 8D.4 | Document trust model: only peers that have authenticated inbound can be called back |
+
+**Exit criteria 8D:** agent-b receives A2A from agent-a → can `a2a_send_message` back without prior `outbound.agents` entry for agent-a.
+
+### 8.4 Config schema additions (fork)
+
+```json
+{
+  "inbound": {
+    "metadataAutoConfig": {
+      "enabled": true,
+      "preferEnvOverrides": true,
+      "warnOnWebhookUrlMismatch": true
+    }
+  },
+  "outbound": {
+    "dynamicPeersFromJwt": false,
+    "peers": {
+      "agent-b": {
+        "tokenId": "abc123def456"
+      }
+    }
+  }
+}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `inbound.metadataAutoConfig.enabled` | Allow chain lookup to fill `publicBaseUrl` / issuer hints |
+| `inbound.metadataAutoConfig.preferEnvOverrides` | When true, `AGENT_*_A2A_PUBLIC_BASE_URL` wins over `webhook_url` |
+| `outbound.peers.<id>.tokenId` | Peer Passport `token_id` for chain-based Agent Card URL resolution |
+| `outbound.dynamicPeersFromJwt` | Phase 8D — register peers from inbound JWT `rodit_webhookurl` |
+
+Bootstrap may write these fields; manual `outbound.agents.<id>.url` remains valid (explicit override).
+
+### 8.5 What we explicitly will not auto-configure
+
+| Field | Reason |
+|-------|--------|
+| `inbound.auth.audience` from `webhook_url` alone | JWT `aud` is often `owner_id` (hex) or hostname — not the public URL; see [`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md) |
+| `audience` normalization in SDK | Contract of `rodit-auth-be`; fix config, not validation |
+| Peer list from `GET /api/agents` | Public endpoint strips `webhook_url` |
+| TLS trust for self-signed peers | Outbound fetch still needs CA-signed certs or operator TLS policy (Phase 5) |
+
+### 8.6 Test strategy (Phase 8)
+
+| Tier | Scope |
+|------|-------|
+| **Tier 1** | Mock `PassportMetadataResolver` in plugin; mock chain responses in identyclaw bootstrap unit tests (if added); no NEAR RPC in CI |
+| **Tier 2** | On staging host: Passport has `webhook_url` set → bootstrap writes `publicBaseUrl` without env; decode JWT → `audience` matches; peer `token_id` → correct remote Agent Card URL |
+| **Tier 3** | Cross-machine `a2a_send_message` with outbound peers resolved only from chain metadata (no hand-edited URLs) |
+
+### 8.7 File map (Phase 8)
+
+| Repo | Files |
+|------|-------|
+| **identyclaw-agents** | `scripts/lib.sh` (`ensure_a2a_config`, `build_a2a_peer_map`, `sync_identyclaw_env`), `env.example`, `security-compliance-improvements.md` |
+| **this fork** | `src/auth/rodit-metadata.ts` (new), `src/auth/rodit-outbound.ts`, `src/config.ts`, `openclaw.plugin.json`, `tests/auth/rodit-metadata.test.ts` (new) |
+| **idclawserver-idc** (docs only) | `references/token-metadata.md`, `references/openclaw-integration-guide.md` |
+
+### 8.8 Suggested order vs Phases 5–7
+
+| Order | Work | Rationale |
+|-------|------|-----------|
+| 1 | **8A + 8A.5** (own `webhook_url` + live JWT `audience`) | Unblocks Tier 2 auth failures on dedalo43-style deploys |
+| 2 | **8B** (peer outbound from `token_id`) | Unblocks Tier 3 cross-machine without manual `outbound.agents` |
+| 3 | Phase 5 operator tasks (DNS, TLS, firewall) | Still required; metadata does not replace ingress |
+| 4 | **8C** (plugin fallback) | Helps non-identyclaw installs |
+| 5 | Phase 6–7 (Tier 3, publish) | Gate unchanged |
+| 6 | **8D** (dynamic peers) | Optional; after Tier 3 green |
+
+**Effort estimate:** 8A–8B ~1–2 d (identyclaw); 8C ~1 d (plugin); 8D ~1 d (optional).
+
+---
+
 ## Test strategy
 
 RODiT auth depends on **NEAR Passport credentials**, **IdentyClaw API login**, and **JWT issuance/validation** via `@rodit/rodit-auth-be`. Those paths hit live blockchain and server state that cannot be replicated faithfully on every developer machine or in fork CI. Treat testing as **three tiers**; only Tier 1 is required to merge Phase 2.
@@ -611,6 +792,9 @@ Phase 6 is **running the tiers above** on **separate machines**, not inventing n
 | Inbound A2A runs agent with full tools | Document least-privilege; consider sandbox for A2A sessions (future) |
 | agent-b lacks Passport | Gate A2A bootstrap on `near-credentials` (same as identyclaw protected tools) |
 | RODiT path untested in CI | Tier 1 mocks at injection boundaries; Tier 2–3 staging smoke before prod; do not add NEAR keys to fork CI |
+| Chain `webhook_url` stale vs live ingress | Bootstrap mismatch lint (8A.6); operator updates Passport via `roditwallet.sh` |
+| Assuming `webhook_url` = JWT `audience` | Tier 2 decode gate (8A.5); separate env `AGENT_*_A2A_AUDIENCE`; see jwt-audience-alignment doc |
+| NEAR RPC unavailable at bootstrap | Fall back to env-only config; log warning; do not block gateway start |
 
 ---
 
@@ -622,8 +806,11 @@ Phase 6 is **running the tiers above** on **separate machines**, not inventing n
 | 2 | Identity claim | `token_id` vs NEAR `account_id` | `token_id` (matches IdentyClaw identity) |
 | 3 | apiKey fallback | Off by default vs dev-only | Off in prod; `allowApiKeyFallback: true` in dev |
 | 4 | Install source | npm vs git vs local path during dev | git until Tier 3; ClawHub/npm after Phase 7 |
-| 6 | Peer URL bootstrap | Auto container DNS vs remote env | Remote HTTPS URLs per host; optional `A2A_REMOTE_PEERS` env (future) |
+| 6 | Peer URL bootstrap | Auto container DNS vs remote env vs chain `webhook_url` | **Phase 8B:** chain `webhook_url` from peer `token_id`; env override for staging |
+| 7 | Canonical public base | Env `AGENT_*_A2A_PUBLIC_BASE_URL` vs Passport `webhook_url` | **`webhook_url` canonical** when set; env overrides with warning (8A.2) |
+| 8 | Audience source | Env / public URL guess vs live JWT `aud` | **Live JWT `aud` after login** (8A.5); optional `AGENT_*_A2A_AUDIENCE` override |
 | 5 | HOLA + JWT | Wire JWT only vs require HOLA before first message | JWT on wire v1; HOLA as optional app-layer policy v2 |
+| 9 | Dynamic inbound peers | Pre-configured `outbound.agents` only vs JWT `rodit_webhookurl` registry | Pre-configured v1; Phase 8D behind flag v2 |
 
 ---
 
@@ -637,10 +824,13 @@ Phase 6 is **running the tiers above** on **separate machines**, not inventing n
 | 3 — Networking + publicBaseUrl | 1 d | Phase 1 |
 | 4 — identyclaw integration | 1–2 d | Phases 1–3 |
 | 5 — Multi-machine + reverse proxy | 1–2 d | Operator; one host per agent |
+| 8A–8B — Metadata bootstrap (identyclaw) | 1–2 d | Phase 4; NEAR RPC on staging host |
+| 8C — Plugin metadata helper | 1 d | Phase 2; Tier 1 mocks |
+| 8D — Dynamic peers (optional) | 1 d | Tier 3 green |
 | 6 — Testing | 1–2 d | Tier 2 per host; Tier 3 cross-host |
 | 7 — Publish | 0.5 d | Tier 3 green on separate machines |
 
-**Total estimate:** ~10–14 days for cross-machine agent-a ↔ agent-b RODiT A2A (includes split-host deploy and publication).
+**Total estimate:** ~10–14 days for cross-machine agent-a ↔ agent-b RODiT A2A (includes split-host deploy and publication). Add ~2–4 d if Phase 8 lands before Tier 3.
 
 ---
 
@@ -656,6 +846,7 @@ Upstream layout may vary; locate equivalents after fork:
 | Inbound auth | `src/auth/authenticate-inbound.ts`, `src/auth/rodit-inbound.ts` |
 | Outbound client | `src/outbound/tools.ts`, `src/outbound/authenticated-agents.ts` |
 | Outbound auth | `src/auth/outbound-auth.ts`, `src/auth/rodit-outbound.ts`, `src/outbound/retry.ts` |
+| Passport metadata (Phase 8) | `src/auth/rodit-metadata.ts` (new) |
 | Config types | config parser + JSON schema |
 | Agent Card builder | card generation + `securitySchemes` |
 | CLI | `a2a generate-key` (keep for fallback) |
@@ -671,8 +862,11 @@ Upstream layout may vary; locate equivalents after fork:
 - A2A spec (security): https://a2a-protocol.org/latest/specification/
 - RODiT SDK (npm integration surface): `@rodit/rodit-auth-be`
 - IdentyClaw API: `https://api.identyclaw.com` (agent-a already uses `identyclaw-tools`)
-- Identyclaw A2A baseline: [`security-compliance-improvements.md`](security-compliance-improvements.md)
+- IdentyClaw token metadata: [`idclawserver-idc/references/token-metadata.md`](https://github.com/discernible-io/idclawserver-idc/blob/main/references/token-metadata.md) (`webhook_url`, `subjectuniqueidentifier_url`)
+- OpenClaw webhook wiring: [`idclawserver-idc/references/openclaw-integration-guide.md`](https://github.com/discernible-io/idclawserver-idc/blob/main/references/openclaw-integration-guide.md)
+- JWT audience alignment: [`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md)
+- Identyclaw A2A baseline: [`security-compliance-improvements.md`](security-compliance-improvements.md) (identyclaw-agents repo)
 
 ---
 
-*Created: 2026-06-06 · Updated: 2026-06-06 (multi-machine deploy + next steps)*
+*Created: 2026-06-06 · Updated: 2026-06-08 (Phase 8 Passport metadata auto-config plan)*
