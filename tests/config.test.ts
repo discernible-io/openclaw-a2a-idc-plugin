@@ -58,6 +58,15 @@ describe("parseA2APluginConfig", () => {
         });
     });
 
+    test("parses outbound tlsSkipVerify", () => {
+        expect(
+            parseA2APluginConfig({ outbound: { tlsSkipVerify: true } }).outbound?.tlsSkipVerify,
+        ).toBe(true);
+        expect(parseA2APluginConfig({ outbound: { tlsSkipVerify: false } }).outbound).toEqual(
+            {},
+        );
+    });
+
     test("collects warnings for silently dropped config entries", () => {
         const warnings: string[] = [];
         const result = parseA2APluginConfig(

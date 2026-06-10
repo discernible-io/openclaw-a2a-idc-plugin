@@ -74,6 +74,8 @@ export type A2AOutboundAuthConfig = A2AOutboundRoditAuthConfig;
 export type A2AOutboundConfig = {
     agents?: Record<string, A2AAgentEntry>;
     auth?: A2AOutboundAuthConfig;
+    /** When true, skip TLS certificate verification for outbound HTTPS (peer agent cards + RPC). */
+    tlsSkipVerify?: boolean;
     taskStore?: boolean;
     fileStore?: boolean;
     sendMessageCharacterLimit?: number;
@@ -398,10 +400,12 @@ function parseOutbound(
     const sendMessageTimeout = parsePositiveNumber(raw.sendMessageTimeout);
     const getTaskTimeout = parsePositiveNumber(raw.getTaskTimeout);
     const getTaskPollInterval = parsePositiveNumber(raw.getTaskPollInterval);
+    const tlsSkipVerify = raw.tlsSkipVerify === true ? true : undefined;
 
     const result: A2AOutboundConfig = {};
     if (agents) result.agents = agents;
     if (auth) result.auth = auth;
+    if (tlsSkipVerify !== undefined) result.tlsSkipVerify = tlsSkipVerify;
     if (taskStore !== undefined) result.taskStore = taskStore;
     if (fileStore !== undefined) result.fileStore = fileStore;
     if (sendMessageCharacterLimit !== undefined)

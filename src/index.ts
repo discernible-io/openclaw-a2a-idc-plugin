@@ -33,6 +33,7 @@ import {
 } from "./inbound/paths.js";
 import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
+import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
 import { createOutboundTools } from "./outbound/tools.js";
 import { createUpdateAgentCardTool } from "./tools/update-agent-card.js";
 import {
@@ -423,6 +424,9 @@ const a2aPlugin = definePluginEntry({
             if (outbound.auth?.provider === "rodit") {
                 api.logger.info("[a2a] Outbound auth enabled with RODiT JWT login");
             }
+            configureOutboundTlsSkipVerify(outbound.tlsSkipVerify === true, (message) =>
+                api.logger.warn(message),
+            );
             const outboundTools = createOutboundTools({
                 agents: outbound.agents,
                 auth: outbound.auth,

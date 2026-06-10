@@ -43,6 +43,10 @@
             "label": "RODiT Log Level",
             "help": "Winston log level for @rodit/rodit-auth-be when loaded (default error)"
         },
+        "outbound.tlsSkipVerify": {
+            "label": "Skip TLS Verify",
+            "help": "When true, disable TLS certificate verification for outbound HTTPS to peer agents"
+        },
         "inbound": {
             "label": "Inbound",
             "help": "Settings for receiving messages from remote A2A agents"
@@ -171,7 +175,8 @@
                     "agentCardTimeout": { "type": "number" },
                     "sendMessageTimeout": { "type": "number" },
                     "getTaskTimeout": { "type": "number" },
-                    "getTaskPollInterval": { "type": "number" }
+                    "getTaskPollInterval": { "type": "number" },
+                    "tlsSkipVerify": { "type": "boolean" }
                 }
             },
             "inbound": {
