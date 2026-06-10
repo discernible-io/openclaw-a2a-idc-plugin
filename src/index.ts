@@ -31,6 +31,11 @@ import {
     multiAgentCardPath,
     multiAgentRpcPath,
 } from "./inbound/paths.js";
+import {
+    createRoditLoginRouteHandlers,
+    DEFAULT_RODIT_LOGIN_PATH,
+    DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH,
+} from "./inbound/rodit-login-routes.js";
 import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
 import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
@@ -94,17 +99,29 @@ function resolveInboundAuth(
     if (provider === "rodit") {
         const issuer = inbound?.auth?.issuer?.trim();
         const audience = inbound?.auth?.audience?.trim();
+        const authMode = inbound?.auth?.mode ?? "mediated";
         if (!issuer || !audience) {
             logger.warn(
                 "[a2a] inbound.auth.provider is rodit but issuer/audience are missing — /a2a will reject all requests",
             );
         } else {
-            logger.info("[a2a] Inbound auth enabled with RODiT JWT validation");
+            const modeLabel =
+                authMode === "mediated" ? "RODiT JWT validation" : `RODiT JWT validation (mode=${authMode})`;
+            logger.info(`[a2a] Inbound auth enabled with ${modeLabel}`);
         }
 
         const rodit: A2AInboundRoditAuthConfig = {
+            mode: authMode,
             issuer: issuer ?? "",
             audience: audience ?? "",
+            ...(inbound?.auth?.p2pAudience?.trim()
+                ? { p2pAudience: inbound.auth.p2pAudience.trim() }
+                : {}),
+            ...(inbound?.auth?.p2pIssuer?.trim()
+                ? { p2pIssuer: inbound.auth.p2pIssuer.trim() }
+                : inbound?.publicBaseUrl?.trim()
+                  ? { p2pIssuer: inbound.publicBaseUrl.trim().replace(/\/$/, "") }
+                  : {}),
             ...(inbound?.auth?.identityClaim ? { identityClaim: inbound.auth.identityClaim } : {}),
             ...(inbound?.auth?.logLevel ? { logLevel: inbound.auth.logLevel } : {}),
         };
@@ -160,6 +177,12 @@ function describeInboundAuthMode(pluginConfig: A2APluginConfig): string {
     }
     if (provider === "rodit") {
         const parts = ["rodit"];
+        if (inbound?.auth?.mode && inbound.auth.mode !== "mediated") {
+            parts.push(`mode=${inbound.auth.mode}`);
+        }
+        if (inbound?.roditLogin?.enabled) {
+            parts.push("login-routes");
+        }
         if (inbound?.auth?.allowApiKeyFallback && (inbound.apiKeys?.length ?? 0) > 0) {
             parts.push(`apiKey-fallback(${inbound.apiKeys?.length ?? 0})`);
         }
@@ -422,7 +445,8 @@ const a2aPlugin = definePluginEntry({
             : 0;
         if (outbound?.agents && configuredOutboundAgentCount > 0) {
             if (outbound.auth?.provider === "rodit") {
-                api.logger.info("[a2a] Outbound auth enabled with RODiT JWT login");
+                const authMode = outbound.auth.mode ?? "mediated";
+                api.logger.info(`[a2a] Outbound auth enabled with RODiT JWT login (mode=${authMode})`);
             }
             configureOutboundTlsSkipVerify(outbound.tlsSkipVerify === true, (message) =>
                 api.logger.warn(message),
@@ -630,6 +654,38 @@ const a2aPlugin = definePluginEntry({
                     handlers.handleJsonRpc(req, res),
                 ),
             });
+        }
+
+        const roditLogin = pluginConfig.inbound?.roditLogin;
+        if (roditLogin?.enabled) {
+            const loginPath = roditLogin.loginPath?.trim() || DEFAULT_RODIT_LOGIN_PATH;
+            const timestampPath =
+                roditLogin.timestampPath?.trim() || DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH;
+            const loginHandlers = createRoditLoginRouteHandlers(roditLogin);
+
+            api.registerHttpRoute({
+                path: timestampPath,
+                auth: "plugin",
+                handler: async (req, res) => {
+                    if (req.method !== "GET") {
+                        res.setHeader("Allow", "GET");
+                        res.statusCode = 405;
+                        res.end("Method Not Allowed");
+                        return;
+                    }
+                    await loginHandlers.handleLoginTimestamp(req, res);
+                },
+            });
+
+            api.registerHttpRoute({
+                path: loginPath,
+                auth: "plugin",
+                handler: loginHandlers.handleLogin,
+            });
+
+            api.logger.info(
+                `[a2a] RODiT P2P login routes enabled: GET ${timestampPath}, POST ${loginPath}`,
+            );
         }
 
         api.registerReload({

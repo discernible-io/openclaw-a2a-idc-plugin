@@ -139,6 +139,10 @@
                             "additionalProperties": false,
                             "properties": {
                                 "url": { "type": "string" },
+                                "loginBaseUrl": {
+                                    "type": "string",
+                                    "description": "P2P RODiT login base URL override (Phase 9)"
+                                },
                                 "custom_headers": {
                                     "type": "object",
                                     "additionalProperties": { "type": "string" }
@@ -154,6 +158,11 @@
                                 "type": "string",
                                 "enum": ["rodit"]
                             },
+                            "mode": {
+                                "type": "string",
+                                "enum": ["mediated", "p2p", "auto"],
+                                "description": "mediated = IdentyClaw API JWT (default); p2p = peer login_client; auto = Phase 9C"
+                            },
                             "credentialsEnv": {
                                 "type": "object",
                                 "additionalProperties": false,
@@ -164,6 +173,8 @@
                                 }
                             },
                             "jwtCacheTtlSeconds": { "type": "number" },
+                            "peerLoginPath": { "type": "string" },
+                            "peerTimestampPath": { "type": "string" },
                             "logLevel": { "type": "string" }
                         }
                     },
@@ -203,8 +214,14 @@
                                 "type": "string",
                                 "enum": ["rodit", "apiKey", "none"]
                             },
+                            "mode": {
+                                "type": "string",
+                                "enum": ["mediated", "p2p", "dual"]
+                            },
                             "issuer": { "type": "string" },
                             "audience": { "type": "string" },
+                            "p2pAudience": { "type": "string" },
+                            "p2pIssuer": { "type": "string" },
                             "identityClaim": { "type": "string" },
                             "allowApiKeyFallback": { "type": "boolean" },
                             "logLevel": { "type": "string" }
@@ -222,7 +239,20 @@
                             }
                         }
                     },
-                    "publicBaseUrl": { "type": "string" }
+                    "publicBaseUrl": { "type": "string" },
+                    "roditLogin": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "enabled": { "type": "boolean" },
+                            "loginPath": { "type": "string" },
+                            "timestampPath": { "type": "string" },
+                            "loginMode": {
+                                "type": "string",
+                                "enum": ["partner", "p2p", "promiscuous"]
+                            }
+                        }
+                    }
                 }
             }
         }

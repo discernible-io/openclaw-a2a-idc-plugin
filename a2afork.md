@@ -17,6 +17,7 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 | **4 — identyclaw integration** | **Done** | `ensure_a2a_config`, `identyclaw-net`, `test-a2a` in identyclaw-openclaw (same-host dev) |
 | 5 — Multi-machine deploy | **Next** | One agent per host; public URLs + TLS; cross-host A2A |
 | **8 — Passport metadata auto-config** | **Planned** | Derive A2A URLs from on-chain `webhook_url`; see [Phase 8](#phase-8--passport-metadata-auto-config-planned) |
+| **9 — P2P RODiT login (peer-issued JWT)** | **In progress (9A–9C landed)** | Peer `login_server` → `login_client`; mediated default; see [Phase 9](#phase-9--p2p-rodit-login-peer-issued-jwt-in-progress) |
 | 6 — Live testing | Not started | Tier 2–3 on separate machines |
 | 7 — Publish | Not started | npm + ClawHub after Tier 3 passes |
 
@@ -51,7 +52,7 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 - Public internet exposure without TLS (Tailscale/reverse proxy remains operator concern)
 - Full HOLA handshake on every A2A message (HOLA stays application-layer via `identyclaw-tools`; wire auth is JWT)
 - Upstreaming RODiT support to `@a2anet/openclaw-a2a-plugin` (nice-to-have later)
-- Full `RoditClient.create('server')` in the plugin (session store, server middleware) — use exported `blockchainService` + `login_server` only
+- Full `RoditClient.create('server')` session store / Express stack in the plugin — Phase 9 uses exported `login_client` + `login_server` only (no idclawserver-idc vendoring)
 
 ---
 
@@ -654,6 +655,180 @@ Bootstrap may write these fields; manual `outbound.agents.<id>.url` remains vali
 
 ---
 
+## Phase 9 — P2P RODiT login (peer-issued JWT) *(in progress)*
+
+Add **true peer-to-peer RODiT authentication** as defined by `@rodit/rodit-auth-be`: caller `login_server` → receiver `login_client` → caller validates returned JWT (mutual completion). **Keep mediated mode** (IdentyClaw API issues JWT for all peers — current production path on dedalo47/dedalo43) as the **default**; opt in to P2P per agent or per deployment.
+
+### 9.1 Why Phase 9
+
+| Mediated mode (Phase 2, default) | P2P mode (Phase 9) |
+|----------------------------------|---------------------|
+| Caller `login_server` → `api.identyclaw.com` | Caller `login_server` → **peer** `{webhook_url}/api/login` |
+| Central API mints JWT; shared service `aud` | **Receiving agent** mints JWT via `login_client` |
+| Works like OAuth client-credentials via IdentyClaw | Uses RODiT mutual-auth contract (NEAR signature + peer validation) |
+| Requires IdentyClaw API for A2A outbound | **API optional** — peers authenticate directly |
+| Already live (dedalo47 ↔ dedalo43) | Target architecture for decentralized peer mesh |
+
+Mediated mode is **not removed** — it remains `outbound.auth.mode: "mediated"` (default) for backward compatibility and staged rollout.
+
+### 9.2 Target flow (P2P)
+
+```mermaid
+sequenceDiagram
+  participant A as Agent A (caller)
+  participant B as Agent B (receiver)
+
+  A->>B: GET /api/login/timestamp
+  B-->>A: timestamp challenge
+  A->>A: sign passport (login_server)
+  A->>B: POST /api/login
+  B->>B: login_client verify on NEAR
+  B->>B: generate_jwt_token (aud = B owner_id)
+  B-->>A: jwt_token
+  A->>A: validate_jwt_token_be (mutual complete)
+  A->>B: POST /a2a + Bearer jwt_token
+  B->>B: validate_jwt_token_be
+  B-->>A: A2A response
+```
+
+IdentyClaw API (`api.identyclaw.com`) may still be used by **identyclaw-tools** (HOLA, DID, identity) — orthogonal to A2A wire auth in P2P mode.
+
+### 9.3 Auth modes (config)
+
+| `outbound.auth.mode` | Outbound login target | JWT issuer | Default |
+|----------------------|----------------------|------------|---------|
+| `mediated` | Passport `subjectuniqueidentifier_url` / `IDENTYCLAW_BASE_URL` | IdentyClaw API | **yes** |
+| `p2p` | Each peer's `{loginBaseUrl}/api/login` (from Agent Card URL or `webhook_url`) | Receiving peer | no |
+| `auto` | Try P2P per peer; fall back to mediated on failure | Mixed | no (Phase 9C) |
+
+| `inbound.auth.mode` | Accept on `POST /a2a` | `inbound.auth.audience` |
+|---------------------|----------------------|-------------------------|
+| `mediated` | JWT from IdentyClaw API (current) | Service provider `owner_id` (probed) |
+| `p2p` | JWT issued by **this** agent's `login_client` | **Own** passport `owner_id` |
+| `dual` | Either mediated or P2P tokens | Validate against configured audience rules (Phase 9B) |
+
+### 9.4 Implementation sub-phases
+
+#### Phase 9A — Plugin scaffolding *(done)*
+
+| Step | Action |
+|------|--------|
+| 9A.1 | Config: `outbound.auth.mode`, `inbound.roditLogin`, `inbound.auth.mode` |
+| 9A.2 | `RoditP2pOutboundAuthProvider` — per-peer JWT cache; `login_server` with peer base URL override |
+| 9A.3 | Inbound routes: `GET /api/login/timestamp`, `POST /api/login` → exported `login_client` |
+| 9A.4 | `agentCardUrlToLoginBase()` helper |
+| 9A.5 | Factory `createRoditOutboundAuthProvider()` selects mediated vs P2P |
+| 9A.6 | Tier 1 unit tests (mocks at login boundaries) |
+
+**Exit criteria 9A:** Config parses; P2P provider caches per agent; login routes register when `inbound.roditLogin.enabled: true`; mediated default unchanged.
+
+#### Phase 9B — Inbound dual validation + audience auto-config *(done in plugin; bootstrap wired)*
+
+| Step | Action |
+|------|--------|
+| 9B.1 | `inbound.auth.mode: dual` — accept mediated **or** P2P JWTs on `/a2a` |
+| 9B.2 | Bootstrap: `probe_rodit_own_owner_id` → `p2pAudience`; `IDENTYCLAW_A2A_INBOUND_AUTH_MODE=dual` |
+| 9B.3 | `roditLogin.enabled` when inbound mode is `p2p` or `dual` |
+| 9B.4 | Mismatch lint: mediated `aud` vs P2P `aud` documented in operator runbook |
+
+**Exit criteria 9B:** Tier 2 — P2P JWT from peer B accepted on B's `/a2a`; mediated JWT still accepted when `dual`.
+
+#### Phase 9C — `auto` mode + identyclaw bootstrap *(done)*
+
+| Step | Action |
+|------|--------|
+| 9C.1 | `outbound.auth.mode: auto` — P2P first, mediated fallback per call |
+| 9C.2 | identyclaw `ensure_a2a_config` env: `AGENT_*_A2A_*_AUTH_MODE`, `IDENTYCLAW_A2A_*_AUTH_MODE` |
+| 9C.3 | Phase 8B peer URLs feed P2P `loginBaseUrl` *(still Phase 8)* |
+
+**Exit criteria 9C:** Cross-machine Tier 3 with `mode: p2p` and no `IDENTYCLAW_BASE_URL` dependency for A2A send.
+
+#### Phase 9D — Dynamic peers (builds on 8D)
+
+| Step | Action |
+|------|--------|
+| 9D.1 | After inbound P2P JWT, register peer from `rodit_webhookurl` for outbound P2P login |
+| 9D.2 | `outbound.dynamicPeersFromJwt: true` |
+
+### 9.5 Config schema (fork)
+
+```json
+{
+  "outbound": {
+    "auth": {
+      "provider": "rodit",
+      "mode": "mediated",
+      "jwtCacheTtlSeconds": 300
+    },
+    "agents": {
+      "agent-b": {
+        "url": "https://agent-b.example.io/.well-known/agent-card.json",
+        "loginBaseUrl": "https://agent-b.example.io"
+      }
+    }
+  },
+  "inbound": {
+    "publicBaseUrl": "https://agent-a.example.io:9443",
+    "roditLogin": {
+      "enabled": true,
+      "loginPath": "/api/login",
+      "timestampPath": "/api/login/timestamp",
+      "loginMode": "p2p"
+    },
+    "auth": {
+      "provider": "rodit",
+      "mode": "dual",
+      "issuer": "https://agent-a.example.io:9443",
+      "audience": "<own owner_id for P2P; service owner_id for mediated when dual>"
+    }
+  }
+}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `outbound.auth.mode` | `mediated` (default), `p2p`, or `auto` |
+| `outbound.agents.*.loginBaseUrl` | Override P2P login target (else derived from Agent Card URL) |
+| `inbound.roditLogin.enabled` | Expose `/api/login` + timestamp on gateway |
+| `inbound.roditLogin.loginMode` | Maps to `SECURITY_OPTIONS_LOGIN_MODE` (`p2p`, `promiscuous`, `partner`) |
+| `inbound.auth.mode` | `mediated`, `p2p`, or `dual` |
+
+### 9.6 SDK note (peer base URL)
+
+`login_server` in `@rodit/rodit-auth-be` resolves the POST target from `config_own_rodit.own_rodit.metadata.subjectuniqueidentifier_url`. Phase 9A **clones own config** with `subjectuniqueidentifier_url` set to the peer's `loginBaseUrl` before calling the exported `login_server(config, options)` — no SDK fork required. Long-term: upstream `options.targetBaseUrl` in rodit-auth-be.
+
+### 9.7 Test strategy (Phase 9)
+
+| Tier | Scope |
+|------|-------|
+| **Tier 1** | P2P provider per-agent cache; login route registration; peer base URL parsing; mediated default |
+| **Tier 2** | Live P2P: A `login_server` → B `/api/login` → JWT works on B `/a2a` |
+| **Tier 3** | Cross-host `a2a_send_message` with `mode: p2p`; mediated regression with `mode: mediated` |
+
+### 9.8 File map (Phase 9)
+
+| File | Role |
+|------|------|
+| `src/auth/rodit-p2p-outbound.ts` | Per-peer `login_server`, JWT cache |
+| `src/auth/rodit-peer-login.ts` | Peer base URL override + exported SDK `login_server` |
+| `src/auth/rodit-own-config.ts` | Load `getConfigOwnRodit()` after client init |
+| `src/inbound/rodit-login-routes.ts` | `login_client` + timestamp HTTP handlers |
+| `src/auth/rodit-outbound.ts` | `createRoditOutboundAuthProvider()` factory |
+| `src/config.ts` | Mode + `roditLogin` parsing |
+| `src/index.ts` | Register login routes when enabled |
+
+### 9.9 Suggested order vs Phase 8
+
+| Order | Work | Rationale |
+|-------|------|-----------|
+| 1 | **9A** (scaffolding + routes) | Enables Tier 2 P2P smoke without removing mediated |
+| 2 | **8A** (own `webhook_url`) | P2P login targets need correct peer base |
+| 3 | **9B** (dual inbound) | Safe migration: both token types during rollout |
+| 4 | **9C + 8B** | Bootstrap + cross-machine Tier 3 |
+| 5 | **9D + 8D** | On-demand peers |
+
+---
+
 ## Test strategy
 
 RODiT auth depends on **NEAR Passport credentials**, **IdentyClaw API login**, and **JWT issuance/validation** via `@rodit/rodit-auth-be`. Those paths hit live blockchain and server state that cannot be replicated faithfully on every developer machine or in fork CI. Treat testing as **three tiers**; only Tier 1 is required to merge Phase 2.
@@ -869,4 +1044,4 @@ Upstream layout may vary; locate equivalents after fork:
 
 ---
 
-*Created: 2026-06-06 · Updated: 2026-06-08 (Phase 8 Passport metadata auto-config plan)*
+*Created: 2026-06-06 · Updated: 2026-06-10 (Phase 9 P2P RODiT login — in progress)*

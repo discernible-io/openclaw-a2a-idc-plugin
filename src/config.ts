@@ -17,7 +17,20 @@ export type A2ASkillConfig = Omit<AgentSkill, "tags" | "security"> & { tags?: st
 
 export type A2AAgentEntry = {
     url: string;
+    /** P2P login target override (Phase 9); defaults to Agent Card URL origin. */
+    loginBaseUrl?: string;
     custom_headers?: Record<string, string>;
+};
+
+export type RoditAuthMode = "mediated" | "p2p" | "auto";
+export type RoditInboundAuthMode = "mediated" | "p2p" | "dual";
+
+export type A2AInboundRoditLoginConfig = {
+    enabled?: boolean;
+    loginPath?: string;
+    timestampPath?: string;
+    /** Maps to SECURITY_OPTIONS_LOGIN_MODE when roditLogin is enabled. */
+    loginMode?: "partner" | "p2p" | "promiscuous";
 };
 
 export type A2AInboundKey = {
@@ -28,8 +41,15 @@ export type A2AInboundKey = {
 export type A2AInboundAuthProvider = "rodit" | "apiKey" | "none";
 
 export type A2AInboundRoditAuthConfig = {
+    /** mediated (default), p2p, or dual (try both audience profiles). */
+    mode?: RoditInboundAuthMode;
     issuer: string;
+    /** Mediated JWT audience (IdentyClaw service owner_id) or sole audience when mode=p2p. */
     audience: string;
+    /** Own passport owner_id — P2P JWT aud when mode is p2p or dual. */
+    p2pAudience?: string;
+    /** Expected iss for P2P-issued JWTs (defaults to inbound publicBaseUrl at runtime). */
+    p2pIssuer?: string;
     identityClaim?: string;
     allowApiKeyFallback?: boolean;
     /** Winston log level for `@rodit/rodit-auth-be` when loaded (default: error). */
@@ -38,11 +58,17 @@ export type A2AInboundRoditAuthConfig = {
 
 export type A2AInboundAuthConfig = {
     provider?: A2AInboundAuthProvider;
+    /** mediated = central API JWT (default); p2p = peer-issued; dual = Phase 9B */
+    mode?: RoditInboundAuthMode;
     issuer?: string;
     audience?: string;
     identityClaim?: string;
     allowApiKeyFallback?: boolean;
     logLevel?: string;
+    /** Own passport owner_id for P2P inbound JWT validation. */
+    p2pAudience?: string;
+    /** Expected iss for P2P-issued JWTs. */
+    p2pIssuer?: string;
 };
 
 export type A2AAgentCardConfig = {
@@ -63,8 +89,14 @@ export type A2AOutboundRoditCredentialsEnv = {
 
 export type A2AOutboundRoditAuthConfig = {
     provider?: "rodit";
+    /** mediated = IdentyClaw API login (default); p2p = peer login_client; auto = Phase 9C */
+    mode?: RoditAuthMode;
     credentialsEnv?: A2AOutboundRoditCredentialsEnv;
     jwtCacheTtlSeconds?: number;
+    /** P2P: path appended to peer loginBaseUrl (default /api/login). */
+    peerLoginPath?: string;
+    /** P2P: timestamp challenge path (default /api/login/timestamp). */
+    peerTimestampPath?: string;
     /** Winston log level for `@rodit/rodit-auth-be` when loaded (default: error). */
     logLevel?: string;
 };
@@ -95,6 +127,8 @@ export type A2AInboundConfig = {
     agents?: Record<string, A2AInboundAgentConfig>;
     /** External base URL for Agent Card discovery (overrides request Host / proxy headers). */
     publicBaseUrl?: string;
+    /** Expose POST /api/login for P2P RODiT peer authentication (Phase 9). */
+    roditLogin?: A2AInboundRoditLoginConfig;
 };
 
 export type A2APluginConfig = {
@@ -193,6 +227,8 @@ function parseAgents(
             pushConfigWarning(warnings, `outbound.agents.${id}: missing or empty url, skipped`);
             continue;
         }
+        const loginBaseUrl =
+            typeof e.loginBaseUrl === "string" ? e.loginBaseUrl.trim() || undefined : undefined;
         let custom_headers: Record<string, string> | undefined;
         if (
             e.custom_headers &&
@@ -209,7 +245,11 @@ function parseAgents(
                 custom_headers = filtered;
             }
         }
-        result[id] = { url, ...(custom_headers ? { custom_headers } : {}) };
+        result[id] = {
+            url,
+            ...(loginBaseUrl ? { loginBaseUrl } : {}),
+            ...(custom_headers ? { custom_headers } : {}),
+        };
     }
     return Object.keys(result).length > 0 ? result : undefined;
 }
@@ -338,6 +378,15 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
     }
     const raw = value as Record<string, unknown>;
     const provider = raw.provider === "rodit" ? "rodit" : undefined;
+    const modeRaw = typeof raw.mode === "string" ? raw.mode.trim() : "";
+    const mode =
+        modeRaw === "mediated" || modeRaw === "p2p" || modeRaw === "auto" ? modeRaw : undefined;
+    const peerLoginPath =
+        typeof raw.peerLoginPath === "string" ? raw.peerLoginPath.trim() || undefined : undefined;
+    const peerTimestampPath =
+        typeof raw.peerTimestampPath === "string"
+            ? raw.peerTimestampPath.trim() || undefined
+            : undefined;
     const jwtCacheTtlSeconds = parsePositiveNumber(raw.jwtCacheTtlSeconds);
     const logLevel =
         typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
@@ -366,6 +415,9 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
 
     if (
         provider === undefined &&
+        mode === undefined &&
+        peerLoginPath === undefined &&
+        peerTimestampPath === undefined &&
         jwtCacheTtlSeconds === undefined &&
         credentialsEnv === undefined &&
         logLevel === undefined
@@ -375,6 +427,9 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
 
     return {
         ...(provider ? { provider } : {}),
+        ...(mode ? { mode } : {}),
+        ...(peerLoginPath ? { peerLoginPath } : {}),
+        ...(peerTimestampPath ? { peerTimestampPath } : {}),
         ...(credentialsEnv ? { credentialsEnv } : {}),
         ...(jwtCacheTtlSeconds !== undefined ? { jwtCacheTtlSeconds } : {}),
         ...(logLevel ? { logLevel } : {}),
@@ -422,6 +477,34 @@ function parseOutbound(
     return Object.keys(result).length > 0 ? result : undefined;
 }
 
+function parseInboundRoditLogin(value: unknown): A2AInboundRoditLoginConfig | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const raw = value as Record<string, unknown>;
+    const enabled = raw.enabled === true ? true : undefined;
+    const loginPath =
+        typeof raw.loginPath === "string" ? raw.loginPath.trim() || undefined : undefined;
+    const timestampPath =
+        typeof raw.timestampPath === "string" ? raw.timestampPath.trim() || undefined : undefined;
+    const loginModeRaw = typeof raw.loginMode === "string" ? raw.loginMode.trim() : "";
+    const loginMode =
+        loginModeRaw === "partner" || loginModeRaw === "p2p" || loginModeRaw === "promiscuous"
+            ? loginModeRaw
+            : undefined;
+
+    if (enabled === undefined && loginPath === undefined && timestampPath === undefined && !loginMode) {
+        return undefined;
+    }
+
+    return {
+        ...(enabled ? { enabled } : {}),
+        ...(loginPath ? { loginPath } : {}),
+        ...(timestampPath ? { timestampPath } : {}),
+        ...(loginMode ? { loginMode } : {}),
+    };
+}
+
 function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
@@ -432,6 +515,9 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
         providerRaw === "rodit" || providerRaw === "apiKey" || providerRaw === "none"
             ? providerRaw
             : undefined;
+    const modeRaw = typeof raw.mode === "string" ? raw.mode.trim() : "";
+    const mode =
+        modeRaw === "mediated" || modeRaw === "p2p" || modeRaw === "dual" ? modeRaw : undefined;
     const issuer = typeof raw.issuer === "string" ? raw.issuer.trim() || undefined : undefined;
     const audience =
         typeof raw.audience === "string" ? raw.audience.trim() || undefined : undefined;
@@ -441,11 +527,18 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
         typeof raw.allowApiKeyFallback === "boolean" ? raw.allowApiKeyFallback : undefined;
     const logLevel =
         typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
+    const p2pAudience =
+        typeof raw.p2pAudience === "string" ? raw.p2pAudience.trim() || undefined : undefined;
+    const p2pIssuer =
+        typeof raw.p2pIssuer === "string" ? raw.p2pIssuer.trim() || undefined : undefined;
 
     if (
         provider === undefined &&
+        mode === undefined &&
         issuer === undefined &&
         audience === undefined &&
+        p2pAudience === undefined &&
+        p2pIssuer === undefined &&
         identityClaim === undefined &&
         allowApiKeyFallback === undefined &&
         logLevel === undefined
@@ -455,8 +548,11 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
 
     return {
         ...(provider ? { provider } : {}),
+        ...(mode ? { mode } : {}),
         ...(issuer ? { issuer } : {}),
         ...(audience ? { audience } : {}),
+        ...(p2pAudience ? { p2pAudience } : {}),
+        ...(p2pIssuer ? { p2pIssuer } : {}),
         ...(identityClaim ? { identityClaim } : {}),
         ...(allowApiKeyFallback !== undefined ? { allowApiKeyFallback } : {}),
         ...(logLevel ? { logLevel } : {}),
@@ -477,6 +573,7 @@ function parseInbound(
         typeof raw.allowUnauthenticated === "boolean" ? raw.allowUnauthenticated : undefined;
     const apiKeys = parseApiKeys(raw.apiKeys, warnings);
     const agents = parseInboundAgents(raw.agents, warnings);
+    const roditLogin = parseInboundRoditLogin(raw.roditLogin);
     const publicBaseUrl =
         typeof raw.publicBaseUrl === "string" ? raw.publicBaseUrl.trim() || undefined : undefined;
     if (typeof raw.publicBaseUrl === "string" && raw.publicBaseUrl.trim().length === 0) {
@@ -489,6 +586,7 @@ function parseInbound(
         allowUnauthenticated === undefined &&
         apiKeys === undefined &&
         agents === undefined &&
+        roditLogin === undefined &&
         publicBaseUrl === undefined
     ) {
         return undefined;
@@ -499,6 +597,7 @@ function parseInbound(
         ...(allowUnauthenticated !== undefined ? { allowUnauthenticated } : {}),
         ...(apiKeys ? { apiKeys } : {}),
         ...(agents ? { agents } : {}),
+        ...(roditLogin ? { roditLogin } : {}),
         ...(publicBaseUrl ? { publicBaseUrl } : {}),
     };
 }

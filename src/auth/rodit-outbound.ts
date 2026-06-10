@@ -3,7 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { A2AOutboundRoditAuthConfig } from "../config.js";
-import type { OutboundAuthProvider } from "./outbound-auth.js";
+import type { OutboundAuthContext, OutboundAuthProvider } from "./outbound-auth.js";
+import {
+    type RoditOutboundCredentials,
+    resolveRoditOutboundCredentials,
+} from "./rodit-outbound-credentials.js";
 import { applyRoditEmbedEnv } from "./rodit-embed-env.js";
 import { loadRoditAuthBe } from "./rodit-runtime.js";
 
@@ -26,22 +30,11 @@ type RoditClientConstructor = {
     create: (options?: { role?: string }) => Promise<RoditClientInstance>;
 };
 
-export type RoditOutboundCredentials = {
-    accountId: string;
-    privateKey: string;
-    baseUrl: string;
-};
-
+export type { RoditOutboundCredentials } from "./rodit-outbound-credentials.js";
 export type RoditLoginFn = (
     credentials: RoditOutboundCredentials,
     options?: { logLevel?: string },
 ) => Promise<string>;
-
-const DEFAULT_CREDENTIALS_ENV = {
-    accountId: "IDENTYCLAW_ACCOUNT_ID",
-    privateKey: "IDENTYCLAW_NEAR_PRIVATE_KEY",
-    baseUrl: "IDENTYCLAW_BASE_URL",
-} as const;
 
 const DEFAULT_JWT_CACHE_TTL_SECONDS = 300;
 
@@ -99,22 +92,7 @@ export class RoditOutboundAuthProvider implements OutboundAuthProvider {
     ) {}
 
     resolveCredentials(): RoditOutboundCredentials {
-        const envNames = {
-            ...DEFAULT_CREDENTIALS_ENV,
-            ...this.config.credentialsEnv,
-        };
-
-        const accountId = process.env[envNames.accountId]?.trim();
-        const privateKey = process.env[envNames.privateKey]?.trim();
-        const baseUrl = process.env[envNames.baseUrl]?.trim();
-
-        if (!accountId || !privateKey || !baseUrl) {
-            throw new Error(
-                "RODiT outbound auth requires accountId, privateKey, and baseUrl env vars",
-            );
-        }
-
-        return { accountId, privateKey, baseUrl };
+        return resolveRoditOutboundCredentials(this.config);
     }
 
     private cacheTtlMs(): number {
@@ -136,22 +114,14 @@ export class RoditOutboundAuthProvider implements OutboundAuthProvider {
         return token;
     }
 
-    async getAuthorizationHeader(): Promise<string> {
+    async getAuthorizationHeader(_context?: OutboundAuthContext): Promise<string> {
         return `Bearer ${await this.getBearerToken()}`;
     }
 
-    invalidate(): void {
+    invalidate(_context?: OutboundAuthContext): void {
         this.cachedToken = null;
         this.expiresAtMs = 0;
     }
 }
 
-export function createRoditOutboundAuthProvider(
-    config: A2AOutboundRoditAuthConfig | undefined,
-    loginFn?: RoditLoginFn,
-): RoditOutboundAuthProvider | undefined {
-    if (config?.provider !== "rodit") {
-        return undefined;
-    }
-    return new RoditOutboundAuthProvider(config, loginFn ?? defaultRoditLogin);
-}
+export { createRoditOutboundAuthProvider } from "./create-rodit-outbound-auth.js";

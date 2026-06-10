@@ -14,7 +14,7 @@ import {
 import type { TSchema } from "@sinclair/typebox";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
-import { createRoditOutboundAuthProvider } from "../auth/rodit-outbound.js";
+import { createRoditOutboundAuthProvider } from "../auth/create-rodit-outbound-auth.js";
 import type { A2AAgentEntry, A2AOutboundAuthConfig } from "../config.js";
 import { type AgentTool, jsonResult } from "../types.js";
 import { AuthenticatedA2AAgents } from "./authenticated-agents.js";
@@ -49,7 +49,7 @@ export type CreateOutboundToolsResult = {
  * the `a2a_` prefix is added here for OpenClaw namespacing.
  */
 export function createOutboundTools(params: CreateOutboundToolsParams): CreateOutboundToolsResult {
-    const authProvider = createRoditOutboundAuthProvider(params.auth);
+    const authProvider = createRoditOutboundAuthProvider(params.auth, params.agents);
     const agents = new AuthenticatedA2AAgents(params.agents, authProvider, params.agentCardTimeout);
 
     const taskStore =

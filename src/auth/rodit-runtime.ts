@@ -31,7 +31,7 @@ type RoditLoginServerFn = (
         };
         own_rodit_bytes_private_key: Uint8Array;
     },
-    options?: { accountId?: string; loginPath?: string },
+    options?: { accountId?: string; loginPath?: string; timestampPath?: string },
 ) => Promise<{ jwt_token?: string; error?: string }>;
 
 type RoditAuthBeModule = {

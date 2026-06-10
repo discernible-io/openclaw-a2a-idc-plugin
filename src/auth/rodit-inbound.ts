@@ -4,7 +4,7 @@
 
 import type { IncomingMessage } from "node:http";
 
-import type { A2AInboundRoditAuthConfig } from "../config.js";
+import type { A2AInboundRoditAuthConfig, RoditInboundAuthMode } from "../config.js";
 import { extractBearerToken } from "../inbound/auth.js";
 import { parseA2AInboundKeyLabel } from "../utils/inbound-key-label.js";
 import { loadRoditAuthBe } from "./rodit-runtime.js";
@@ -32,12 +32,17 @@ export type RoditJwtValidator = (
     config: A2AInboundRoditAuthConfig,
 ) => Promise<RoditJwtValidateResult | null>;
 
-function buildAudienceRodit(config: A2AInboundRoditAuthConfig): RoditAudienceRodit {
+type AudienceProfile = {
+    issuer: string;
+    audience: string;
+};
+
+function buildAudienceRodit(profile: AudienceProfile): RoditAudienceRodit {
     return {
         token_id: "a2a-inbound",
-        owner_id: config.audience,
+        owner_id: profile.audience,
         metadata: {
-            subjectuniqueidentifier_url: config.issuer,
+            subjectuniqueidentifier_url: profile.issuer,
         },
     };
 }
@@ -48,6 +53,55 @@ export const defaultRoditJwtValidator: RoditJwtValidator = async (token, config)
         enforceSessionRegistration: false,
     });
 };
+
+export function resolveInboundAudienceProfiles(
+    config: A2AInboundRoditAuthConfig,
+): AudienceProfile[] {
+    const mode: RoditInboundAuthMode = config.mode ?? "mediated";
+    const mediated: AudienceProfile = {
+        issuer: config.issuer,
+        audience: config.audience,
+    };
+
+    if (mode === "mediated") {
+        return [mediated];
+    }
+
+    const p2pAudience = config.p2pAudience?.trim() || config.audience.trim();
+    const p2pIssuer = config.p2pIssuer?.trim() || config.issuer.trim();
+    const p2p: AudienceProfile = {
+        issuer: p2pIssuer,
+        audience: p2pAudience,
+    };
+
+    if (mode === "p2p") {
+        return [p2p];
+    }
+
+    // dual — try mediated first (existing peers), then P2P-issued tokens
+    if (p2p.audience === mediated.audience && p2p.issuer === mediated.issuer) {
+        return [mediated];
+    }
+    return [mediated, p2p];
+}
+
+async function validateJwtWithProfiles(
+    token: string,
+    config: A2AInboundRoditAuthConfig,
+    validateJwt: RoditJwtValidator,
+): Promise<RoditJwtValidateResult | null> {
+    for (const profile of resolveInboundAudienceProfiles(config)) {
+        const result = await validateJwt(token, {
+            ...config,
+            issuer: profile.issuer,
+            audience: profile.audience,
+        });
+        if (result?.valid && result.payload) {
+            return result;
+        }
+    }
+    return null;
+}
 
 function resolveIdentityLabel(
     payload: Record<string, unknown>,
@@ -78,7 +132,7 @@ export async function validateRoditInbound(
     }
 
     try {
-        const result = await validateJwt(token, config);
+        const result = await validateJwtWithProfiles(token, config, validateJwt);
         if (!result?.valid || !result.payload) {
             return { ok: false, reason: "invalid_token" };
         }

@@ -2,7 +2,12 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+export type OutboundAuthContext = {
+    agentId: string;
+    agentCardUrl: string;
+};
+
 export type OutboundAuthProvider = {
-    getAuthorizationHeader(): Promise<string | undefined>;
-    invalidate(): void;
+    getAuthorizationHeader(context?: OutboundAuthContext): Promise<string | undefined>;
+    invalidate(context?: OutboundAuthContext): void;
 };

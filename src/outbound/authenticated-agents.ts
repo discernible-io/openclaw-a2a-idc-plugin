@@ -64,13 +64,17 @@ export class AuthenticatedA2AAgents {
     }
 
     private async mergeAuthHeaders(
+        agentId: string,
         agent: AgentURLAndCustomHeaders,
     ): Promise<AgentURLAndCustomHeaders> {
         if (!this.authProvider) {
             return agent;
         }
 
-        const authorization = await this.authProvider.getAuthorizationHeader();
+        const authorization = await this.authProvider.getAuthorizationHeader({
+            agentId,
+            agentCardUrl: agent.agentCard.url,
+        });
         if (!authorization) {
             return agent;
         }
@@ -89,14 +93,14 @@ export class AuthenticatedA2AAgents {
         if (!agent) {
             return null;
         }
-        return this.mergeAuthHeaders(agent);
+        return this.mergeAuthHeaders(agentId, agent);
     }
 
     async getAgents(): Promise<Record<string, AgentURLAndCustomHeaders>> {
         const agents = await this.inner.getAgents();
         const merged: Record<string, AgentURLAndCustomHeaders> = {};
         for (const [agentId, agent] of Object.entries(agents)) {
-            merged[agentId] = await this.mergeAuthHeaders(agent);
+            merged[agentId] = await this.mergeAuthHeaders(agentId, agent);
         }
         return merged;
     }
