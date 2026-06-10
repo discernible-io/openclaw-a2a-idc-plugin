@@ -37,7 +37,7 @@ describe("resolveInboundAudienceProfiles", () => {
             }),
         ).toEqual([
             { issuer: "https://api.identyclaw.com", audience: "service-aud" },
-            { issuer: "https://agent-a.example:9443", audience: "own-aud" },
+            { issuer: "https://api.identyclaw.com", audience: "own-aud" },
         ]);
     });
 });

@@ -92,6 +92,35 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
     res.end(JSON.stringify(payload));
 }
 
+/** rodit-auth-be `login_client` expects Express-style `res.status().json()` / `res.json()`. */
+export function wrapExpressLikeResponse(res: ServerResponse): ServerResponse & {
+    status: (code: number) => { json: (payload: unknown) => void };
+    json: (payload: unknown) => void;
+} {
+    let statusCode = 200;
+    const wrapped = res as ServerResponse & {
+        status: (code: number) => { json: (payload: unknown) => void };
+        json: (payload: unknown) => void;
+    };
+    wrapped.status = (code: number) => {
+        statusCode = code;
+        res.statusCode = code;
+        return {
+            json: (payload: unknown) => {
+                if (!res.headersSent) {
+                    sendJson(res, statusCode, payload);
+                }
+            },
+        };
+    };
+    wrapped.json = (payload: unknown) => {
+        if (!res.headersSent) {
+            sendJson(res, statusCode, payload);
+        }
+    };
+    return wrapped;
+}
+
 export type RoditLoginRouteHandlers = {
     handleLoginTimestamp: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
     handleLogin: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
@@ -129,7 +158,11 @@ export function createRoditLoginRouteHandlers(
 
             try {
                 const client = await getRoditClient();
-                await client.login_client(attachParsedBody(req, bodyResult.body), res);
+                const expressReq = attachParsedBody(req, bodyResult.body);
+                if (!expressReq.socket?.remoteAddress && !("ip" in expressReq)) {
+                    Object.assign(expressReq, { ip: "" });
+                }
+                await client.login_client(expressReq, wrapExpressLikeResponse(res));
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 if (!res.headersSent) {

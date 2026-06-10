@@ -68,9 +68,10 @@ export function resolveInboundAudienceProfiles(
     }
 
     const p2pAudience = config.p2pAudience?.trim() || config.audience.trim();
-    const p2pIssuer = config.p2pIssuer?.trim() || config.issuer.trim();
+    // P2P login_client JWTs use iss = caller passport URL (typically same as mediated issuer),
+    // aud = receiving agent owner_id — not the receiver gateway URL (p2pIssuer is legacy/doc only).
     const p2p: AudienceProfile = {
-        issuer: p2pIssuer,
+        issuer: config.issuer,
         audience: p2pAudience,
     };
 
