@@ -236,7 +236,7 @@ Both repos are private to the Discernible org — clone locally when implementin
 |---------|----------------------------|---------------------------------------------|
 | **Inbound** — validate peer JWT on `POST /a2a` | Server middleware / token service | `validate_jwt_token_be` via `src/auth/rodit-inbound.ts`; `enforceSessionRegistration: false` for peer tokens |
 | **Inbound** — sender identity | JWT claims (`token_id`, etc.) | `inbound.auth.identityClaim` → A2A sender label |
-| **Outbound** — obtain JWT | Client `login_server` / env credentials | `RoditOutboundAuthProvider` in `src/auth/rodit-outbound.ts` → `login_server` against `IDENTYCLAW_BASE_URL` |
+| **Outbound** — obtain JWT | Client `RoditClient.create({ role: "client" }).login_server()` | `RoditOutboundAuthProvider` in `src/auth/rodit-outbound.ts` — file creds via `NEAR_CREDENTIALS_FILE_PATH`, singleton `stateManager` |
 | **Outbound** — attach Bearer | Client HTTP wrapper | `AuthenticatedA2AAgents` + `withOutboundAuthRetry` in `src/outbound/` |
 | **Outbound** — refresh on 401 | Client retry policy | `invalidate()` + single retry in `src/outbound/retry.ts` |
 | **Auto-config** — own public base | Passport `webhook_url` + `getConfigOwnRodit().own_rodit.metadata` (server) | `blockchainService.nearorg_rpc_tokensfromaccountid` in bootstrap / `src/auth/rodit-metadata.ts` (Phase 8) |

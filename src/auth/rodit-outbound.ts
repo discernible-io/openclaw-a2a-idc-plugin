@@ -2,25 +2,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import { createRequire } from "node:module";
-
 import type { A2AOutboundRoditAuthConfig } from "../config.js";
 import type { OutboundAuthProvider } from "./outbound-auth.js";
+import { applyRoditEmbedEnv } from "./rodit-embed-env.js";
 import { loadRoditAuthBe } from "./rodit-runtime.js";
-
-const require = createRequire(import.meta.url);
-const bs58 = require("bs58") as { decode: (input: string) => Uint8Array };
-
-type RoditLoginConfig = {
-    own_rodit: {
-        token_id: string;
-        owner_id: string;
-        metadata: {
-            subjectuniqueidentifier_url: string;
-        };
-    };
-    own_rodit_bytes_private_key: Uint8Array;
-};
 
 type RoditLoginOptions = {
     accountId?: string;
@@ -28,8 +13,17 @@ type RoditLoginOptions = {
 };
 
 type RoditLoginResult = {
+    success?: boolean;
     jwt_token?: string;
     error?: string;
+};
+
+type RoditClientInstance = {
+    login_server: (options?: RoditLoginOptions) => Promise<RoditLoginResult>;
+};
+
+type RoditClientConstructor = {
+    create: (options?: { role?: string }) => Promise<RoditClientInstance>;
 };
 
 export type RoditOutboundCredentials = {
@@ -51,33 +45,45 @@ const DEFAULT_CREDENTIALS_ENV = {
 
 const DEFAULT_JWT_CACHE_TTL_SECONDS = 300;
 
-function stripEd25519Prefix(key: string): string {
-    return key.startsWith("ed25519:") ? key.slice("ed25519:".length) : key;
+let roditClientPromise: Promise<RoditClientInstance> | null = null;
+
+/** Use file-based NEAR credentials (identyclaw-agents sets NEAR_CREDENTIALS_FILE_PATH). */
+function ensureRoditCredentialSource(): void {
+    if (process.env.RODIT_NEAR_CREDENTIALS_SOURCE?.trim()) {
+        return;
+    }
+    if (process.env.NEAR_CREDENTIALS_FILE_PATH?.trim()) {
+        process.env.RODIT_NEAR_CREDENTIALS_SOURCE = "file";
+        return;
+    }
+    throw new Error(
+        "RODiT credentials not configured: set NEAR_CREDENTIALS_FILE_PATH (from secrets/near-credentials/*.json)",
+    );
 }
 
-function decodePrivateKeyBytes(privateKey: string): Uint8Array {
-    return new Uint8Array(bs58.decode(stripEd25519Prefix(privateKey.trim())));
+async function getRoditClient(logLevel?: string): Promise<RoditClientInstance> {
+    applyRoditEmbedEnv({ logLevel });
+    if (!roditClientPromise) {
+        const { RoditClient } = loadRoditAuthBe({ logLevel }) as unknown as {
+            RoditClient: RoditClientConstructor;
+        };
+        // Singleton stateManager (not createTestInstance): post-login JWT validation
+        // reads shared config — same as clienttest-idc production clients.
+        roditClientPromise = RoditClient.create({ role: "client" });
+    }
+    return roditClientPromise;
 }
 
-function buildLoginConfig(credentials: RoditOutboundCredentials): RoditLoginConfig {
-    return {
-        own_rodit: {
-            token_id: "",
-            owner_id: credentials.accountId,
-            metadata: {
-                subjectuniqueidentifier_url: credentials.baseUrl.replace(/\/$/, ""),
-            },
-        },
-        own_rodit_bytes_private_key: decodePrivateKeyBytes(credentials.privateKey),
-    };
-}
-
-export const defaultRoditLogin: RoditLoginFn = async (credentials, options) => {
-    const { login_server } = loadRoditAuthBe({ logLevel: options?.logLevel });
-    const result = await login_server(buildLoginConfig(credentials), {
-        accountId: credentials.accountId,
-    });
-    if (result.error || !result.jwt_token) {
+/**
+ * Outbound login via RoditClient.login_server — same path as clienttest-idc.
+ * Loads own passport from NEAR (file creds), then validates API-issued JWT on chain.
+ */
+export const defaultRoditLogin: RoditLoginFn = async (_credentials, options) => {
+    ensureRoditCredentialSource();
+    const client = await getRoditClient(options?.logLevel);
+    // When credentials file loads a passport (token_id), sign with roditid only — do not pass accountId.
+    const result = await client.login_server();
+    if (!result.jwt_token || result.success === false) {
         throw new Error(result.error ?? "RODiT login failed");
     }
     return result.jwt_token;
@@ -147,5 +153,5 @@ export function createRoditOutboundAuthProvider(
     if (config?.provider !== "rodit") {
         return undefined;
     }
-    return new RoditOutboundAuthProvider(config, loginFn);
+    return new RoditOutboundAuthProvider(config, loginFn ?? defaultRoditLogin);
 }

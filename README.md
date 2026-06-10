@@ -75,6 +75,16 @@ Outbound RODiT login reads these env vars by default (override names with `outbo
 | `IDENTYCLAW_NEAR_PRIVATE_KEY` | Ed25519 private key (`ed25519:…` or base58) |
 | `IDENTYCLAW_BASE_URL` | IdentyClaw API base URL (e.g. `https://api.identyclaw.com`) |
 
+For `@rodit/rodit-auth-be` initialization (same layout as [`clienttest-idc`](https://github.com/discernible-io/clienttest-idc)):
+
+| Variable | Purpose |
+| -------- | ------- |
+| `RODIT_NEAR_CREDENTIALS_SOURCE` | `file` (recommended with identyclaw-agents) |
+| `NEAR_CREDENTIALS_FILE_PATH` | Path to Passport JSON, e.g. `…/secrets/near-credentials/<hash>.json` |
+| `NEAR_CONTRACT_ID` | RODiT contract on mainnet (e.g. `genaaaa-identyclaw-com.near`) |
+
+Outbound login uses `RoditClient.create({ role: "client" }).login_server()` so the SDK loads the passport from the credentials file, initializes on-chain `serviceprovider_id`, and validates API-issued JWTs — do not call raw `login_server` with a hand-built config unless testing.
+
 Keep credentials in env or secrets files — not in `openclaw.json`.
 
 ### Embedding in OpenClaw chat / gateway (quiet mode)
