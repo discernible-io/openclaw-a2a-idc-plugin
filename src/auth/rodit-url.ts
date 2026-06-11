@@ -2,10 +2,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-/** Derive RODiT login base URL from an Agent Card discovery URL. */
+/** Derive RODiT login base URL from an Agent Card discovery URL or RPC URL. */
 export function agentCardUrlToLoginBase(agentCardUrl: string): string {
     const parsed = new URL(agentCardUrl);
-    parsed.pathname = parsed.pathname.replace(/\/\.well-known\/agent-card\.json\/?$/i, "") || "/";
+    let path = parsed.pathname;
+    path = path.replace(/\/\.well-known\/agent-card\.json\/?$/i, "");
+    path = path.replace(/\/a2a\/?$/i, "");
+    parsed.pathname = path || "/";
     parsed.hash = "";
     parsed.search = "";
     const normalized = parsed.toString();

@@ -92,13 +92,17 @@ async function validateJwtWithProfiles(
     validateJwt: RoditJwtValidator,
 ): Promise<RoditJwtValidateResult | null> {
     for (const profile of resolveInboundAudienceProfiles(config)) {
-        const result = await validateJwt(token, {
-            ...config,
-            issuer: profile.issuer,
-            audience: profile.audience,
-        });
-        if (result?.valid && result.payload) {
-            return result;
+        try {
+            const result = await validateJwt(token, {
+                ...config,
+                issuer: profile.issuer,
+                audience: profile.audience,
+            });
+            if (result?.valid && result.payload) {
+                return result;
+            }
+        } catch {
+            // validate_jwt_token_be throws on mismatch — try next dual-mode profile
         }
     }
     return null;

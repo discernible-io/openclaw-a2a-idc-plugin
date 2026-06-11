@@ -20,4 +20,10 @@ describe("agentCardUrlToLoginBase", () => {
             "https://peer.example/a",
         );
     });
+
+    test("strips /a2a RPC path from resolved Agent Card url", () => {
+        expect(agentCardUrlToLoginBase("https://agent-a.dihola.io:9443/a2a")).toBe(
+            "https://agent-a.dihola.io:9443",
+        );
+    });
 });

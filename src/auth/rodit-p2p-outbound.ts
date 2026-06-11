@@ -44,6 +44,10 @@ export class RoditP2pOutboundAuthProvider {
         if (entry?.loginBaseUrl?.trim()) {
             return entry.loginBaseUrl.trim().replace(/\/$/, "");
         }
+        // Config discovery URL is stable; resolved Agent Card `url` is the /a2a RPC endpoint.
+        if (entry?.url?.trim()) {
+            return agentCardUrlToLoginBase(entry.url.trim());
+        }
         return agentCardUrlToLoginBase(context.agentCardUrl);
     }
 

@@ -72,4 +72,33 @@ describe("validateRoditInbound dual mode", () => {
         expect(result).toEqual({ ok: true, label: "peer-a" });
         expect(attempts).toEqual(["service-aud", "own-aud"]);
     });
+
+    test("accepts token matching second profile when first throws", async () => {
+        const attempts: string[] = [];
+        const validateJwt: RoditJwtValidator = async (_token, config) => {
+            attempts.push(config.audience);
+            if (config.audience === "service-aud") {
+                throw new Error("Error 004: Invalid audience");
+            }
+            if (config.audience === "own-aud") {
+                return { valid: true, payload: { rodit_id: "peer-a" } };
+            }
+            return { valid: false };
+        };
+
+        const result = await validateRoditInbound(
+            fakeReq("Bearer token"),
+            {
+                mode: "dual",
+                issuer: "https://api.identyclaw.com",
+                audience: "service-aud",
+                p2pAudience: "own-aud",
+                identityClaim: "rodit_id",
+            },
+            validateJwt,
+        );
+
+        expect(result).toEqual({ ok: true, label: "peer-a" });
+        expect(attempts).toEqual(["service-aud", "own-aud"]);
+    });
 });

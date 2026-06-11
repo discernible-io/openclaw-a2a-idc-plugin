@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-export const VERSION = "0.2.0"; // x-release-please-version
+export const VERSION = "0.2.3"; // x-release-please-version
 
 import * as path from "node:path";
 
@@ -36,6 +36,7 @@ import {
     DEFAULT_RODIT_LOGIN_PATH,
     DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH,
 } from "./inbound/rodit-login-routes.js";
+import { getRoditOwnConfig } from "./auth/rodit-own-config.js";
 import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
 import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
@@ -343,6 +344,11 @@ const a2aPlugin = definePluginEntry({
         const pluginConfig = parseA2APluginConfig(api.pluginConfig, configWarnings);
         for (const warning of configWarnings) {
             api.logger.warn(`[a2a] Config: ${warning}`);
+        }
+
+        if (pluginConfig.inbound?.roditLogin?.enabled) {
+            process.env.SECURITY_OPTIONS_LOGIN_MODE =
+                pluginConfig.inbound.roditLogin.loginMode ?? "promiscuous";
         }
 
         registerCli(api, pluginConfig);
@@ -713,6 +719,21 @@ const a2aPlugin = definePluginEntry({
                 let inboundInitFailures = 0;
                 let outboundLoadedCount = 0;
                 let outboundInitFailures = 0;
+
+                const inboundRodit =
+                    pluginConfig.inbound?.auth?.provider === "rodit" ||
+                    pluginConfig.inbound?.roditLogin?.enabled;
+                if (inboundRodit) {
+                    try {
+                        await getRoditOwnConfig(pluginConfig.inbound?.auth?.logLevel);
+                        api.logger.info("[a2a] RODiT passport warmed up for inbound auth");
+                    } catch (err) {
+                        api.logger.error(
+                            `[a2a] RODiT inbound warmup failed: ${formatStartupError(err)}`,
+                        );
+                        startupCaveats.push("RODiT inbound passport warmup failed");
+                    }
+                }
 
                 const startupPublicUrl = resolveStartupPublicBaseUrl(configuredPublicBaseUrl);
                 if (!configuredPublicBaseUrl?.trim()) {

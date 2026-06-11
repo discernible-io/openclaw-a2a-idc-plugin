@@ -35,7 +35,7 @@ function ensureRoditCredentialSource(): void {
 }
 
 function applyRoditLoginMode(config: A2AInboundRoditLoginConfig): void {
-    const mode = config.loginMode ?? "p2p";
+    const mode = config.loginMode ?? "promiscuous";
     process.env.SECURITY_OPTIONS_LOGIN_MODE = mode;
 }
 
@@ -46,7 +46,7 @@ async function getRoditClient(logLevel?: string): Promise<RoditClientWithLogin> 
         const { RoditClient } = loadRoditAuthBe({ logLevel }) as unknown as {
             RoditClient: RoditClientConstructor;
         };
-        roditClientPromise = RoditClient.create({ role: "client" });
+        roditClientPromise = RoditClient.create({ role: "server" });
     }
     return roditClientPromise;
 }
