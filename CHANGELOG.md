@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 — 2026-06-12
+
+- ClawHub publish: `prepare:publish`, `publish:clawhub`, pack verification, and `PUBLISH.md` (pattern from `openclaw-identyclaw-plugin`).
+- Package rename to `@identyclaw/openclaw-a2a-plugin` for npm and ClawHub (`clawhub:@identyclaw/openclaw-a2a-plugin`).
+- RODiT / Passport JWT authentication for A2A peers (mediated, P2P, and dual inbound modes).
+
 ## [0.2.0](https://github.com/a2anet/openclaw-a2a-plugin/compare/openclaw-a2a-plugin-v0.1.4...openclaw-a2a-plugin-v0.2.0) (2026-05-25)
 
 

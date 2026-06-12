@@ -3,7 +3,7 @@
     "release-type": "node",
     "packages": {
         ".": {
-            "package-name": "@a2anet/openclaw-a2a-plugin",
+            "package-name": "@identyclaw/openclaw-a2a-plugin",
             "changelog-path": "CHANGELOG.md",
             "extra-files": ["src/index.ts"]
         }

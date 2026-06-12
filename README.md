@@ -1,6 +1,6 @@
 # OpenClaw A2A Plugin (IdentyClaw fork)
 
-> **Fork notice:** This is `@discernible-io/openclaw-a2a-idc-plugin`, an IdentyClaw-maintained variant of [`@a2anet/openclaw-a2a-plugin`](https://github.com/a2anet/openclaw-a2a-plugin). It adds RODiT / Passport JWT authentication for A2A peers. See [`a2afork.md`](a2afork.md) and [`UPSTREAM.md`](UPSTREAM.md).
+> **Fork notice:** This is `@identyclaw/openclaw-a2a-plugin`, an IdentyClaw-maintained variant of [`@a2anet/openclaw-a2a-plugin`](https://github.com/a2anet/openclaw-a2a-plugin). It adds RODiT / Passport JWT authentication for A2A peers. See [`a2afork.md`](a2afork.md) and [`UPSTREAM.md`](UPSTREAM.md).
 
 ![OpenClaw A2A Plugin](images/openclaw-a2a-plugin-banner.png)
 
@@ -30,10 +30,16 @@ Watch [OpenClaw A2A Plugin Demo - Connect your OpenClaw to other OpenClaws (and 
 
 ## 📦 Installation
 
-Install the IdentyClaw fork:
+From ClawHub:
 
 ```bash
-openclaw plugins install @discernible-io/openclaw-a2a-idc-plugin
+openclaw plugins install clawhub:@identyclaw/openclaw-a2a-plugin
+```
+
+From npm:
+
+```bash
+openclaw plugins install @identyclaw/openclaw-a2a-plugin
 ```
 
 During development you can also install from a local path or git URL. Upstream package: `@a2anet/openclaw-a2a-plugin` (API-key auth only).
@@ -52,7 +58,7 @@ This plugin handles **A2A wire protocol** (peer messaging). Install it alongside
 
 | Artifact | Install | Role |
 | --- | --- | --- |
-| **This plugin** (`a2a`) | `openclaw plugins install @discernible-io/openclaw-a2a-idc-plugin` | A2A send/receive, RODiT JWT on `POST /a2a` |
+| **This plugin** (`a2a`) | `openclaw plugins install clawhub:@identyclaw/openclaw-a2a-plugin` | A2A send/receive, RODiT JWT on `POST /a2a` |
 | IdentyClaw tools (`identyclaw-tools`) | `openclaw plugins install clawhub:@identyclaw/openclaw-identyclaw-plugin` | API login, HOLA, identity, DID — [`openclaw-identyclaw-plugin`](https://github.com/discernible-io/openclaw-identyclaw-plugin) |
 | Skill (workflows) | `openclaw skills install clawhub:identyclaw` | Operator playbooks and reference docs |
 | MCP (canonical docs) | `https://api.identyclaw.com/mcp` | Live IdentyClaw API documentation |
@@ -726,6 +732,17 @@ isolated under its agent ID — `<state>/a2a/inbound/<agentId>/tasks/` and
 `<workspace>/a2a/inbound/<agentId>/files/`.
 
 Outbound task/file storage can be disabled with `outbound.taskStore: false` and `outbound.fileStore: false`.
+
+## Publish to ClawHub
+
+See [PUBLISH.md](./PUBLISH.md):
+
+```bash
+npm run publish:clawhub:dry-run
+npm run publish:clawhub
+```
+
+---
 
 ## 🛠️ Development
 
