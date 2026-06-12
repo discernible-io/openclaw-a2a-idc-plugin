@@ -460,6 +460,7 @@ const a2aPlugin = definePluginEntry({
             const outboundTools = createOutboundTools({
                 agents: outbound.agents,
                 auth: outbound.auth,
+                logWarn: (message) => api.logger.warn(message),
                 stateDir,
                 workspaceDir,
                 taskStore: outbound.taskStore,
