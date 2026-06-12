@@ -18,6 +18,7 @@ import { createRoditOutboundAuthProvider } from "../auth/create-rodit-outbound-a
 import type { A2AAgentEntry, A2AOutboundAuthConfig } from "../config.js";
 import { type AgentTool, jsonResult } from "../types.js";
 import { AuthenticatedA2AAgents } from "./authenticated-agents.js";
+import { normalizeA2AToolParams, sanitizeOpenAiToolSchema } from "./tool-params.js";
 import { withOutboundAuthRetry } from "./retry.js";
 
 export type CreateOutboundToolsParams = {
@@ -83,6 +84,7 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
 
     const agentTools = (tools.tools as A2AToolDefinition[]).map((def) => {
         const { $schema: _, ...jsonSchema } = zodToJsonSchema(def.schema, { target: "openAi" });
+        sanitizeOpenAiToolSchema(jsonSchema);
         return {
             name: `a2a_${def.name}`,
             label: `a2a_${def.name}`,
@@ -90,7 +92,7 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
             parameters: jsonSchema as TSchema,
             execute: async (_toolCallId: string, toolParams: Record<string, unknown>) =>
                 withOutboundAuthRetry(authProvider, async () =>
-                    jsonResult(await def.execute(toolParams)),
+                    jsonResult(await def.execute(normalizeA2AToolParams(toolParams))),
                 ),
         };
     });

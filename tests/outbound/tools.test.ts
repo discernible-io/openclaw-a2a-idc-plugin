@@ -102,4 +102,40 @@ describe("createOutboundTools", () => {
         // by verifying the tools were created without error
         expect(true).toBe(true);
     });
+
+    test("send_message schema does not require nullable optional fields", () => {
+        const { tools } = createOutboundTools({
+            agents: { test: { url: "https://example.com/agent-card.json" } },
+            stateDir: tmpDir(),
+            workspaceDir: tmpDir(),
+        });
+        const send = tools.find((t) => t.name === "a2a_send_message")!;
+        const schema = send.parameters as {
+            required?: string[];
+            properties?: Record<string, unknown>;
+        };
+        expect(schema.required).toEqual(["agentId", "message"]);
+        expect(schema.required).not.toContain("taskId");
+        expect(schema.required).not.toContain("contextId");
+    });
+
+    test("send_message accepts empty task_id without Invalid task id error", async () => {
+        const { tools } = createOutboundTools({
+            agents: {
+                "agent-b": { url: "https://example.com/agent-card.json" },
+            },
+            stateDir: tmpDir(),
+            workspaceDir: tmpDir(),
+        });
+        const send = tools.find((t) => t.name === "a2a_send_message")!;
+        const result = await send.execute("call-1", {
+            agent_id: "agent-b",
+            message: "hello",
+            task_id: "",
+            context_id: "",
+        });
+        const text = (result as { content: Array<{ text: string }> }).content[0]?.text ?? "";
+        const body = text ? JSON.parse(text) : {};
+        expect(body.error_message ?? "").not.toMatch(/Invalid task id/);
+    });
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4 — 2026-06-12
+
+- Fix `a2a_send_message` failing with `Invalid task id: ''` when models pass empty strings for optional `taskId` / `contextId` fields.
+- Sanitize OpenAI-target tool schemas so nullable optional fields are not marked required.
+- Normalize tool params: strip empty strings/null and map snake_case keys to camelCase before calling a2a-utils.
+
 ## 0.2.3 — 2026-06-12
 
 - ClawHub publish: `prepare:publish`, `publish:clawhub`, pack verification, and `PUBLISH.md` (pattern from `openclaw-identyclaw-plugin`).
