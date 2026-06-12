@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.5 — 2026-06-12
+
+- Republish to ClawHub (same `a2a_send_message` empty `taskId` fix as 0.2.4, aligned with git release commit).
+
 ## 0.2.4 — 2026-06-12
 
 - Fix `a2a_send_message` failing with `Invalid task id: ''` when models pass empty strings for optional `taskId` / `contextId` fields.
