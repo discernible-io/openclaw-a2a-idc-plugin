@@ -121,7 +121,7 @@ export function getSharedTooling(): Promise<SharedTooling> {
 
 export type GatewayConfig = {
     port: number;
-    /** Plugin config object passed verbatim under `plugins.entries.a2a.config`. */
+    /** Plugin config object passed verbatim under `plugins.entries.identyclaw-a2a.config`. */
     pluginConfig: Record<string, unknown>;
     /** Optional gateway-level overrides, merged into `gateway`. */
     gateway?: Record<string, unknown>;
@@ -177,7 +177,7 @@ export async function startGateway(config: GatewayConfig): Promise<Gateway> {
             ...installedPlugins,
             entries: {
                 ...(installedPlugins.entries ?? {}),
-                a2a: {
+                "identyclaw-a2a": {
                     enabled: true,
                     config: config.pluginConfig,
                 },

@@ -15,7 +15,7 @@ describe("package", () => {
 describe("plugin definition", () => {
     test("exports default plugin object", () => {
         expect(plugin).toBeDefined();
-        expect(plugin.id).toBe("a2a");
+        expect(plugin.id).toBe("identyclaw-a2a");
         expect(plugin.name).toBe("A2A Protocol");
         expect(typeof plugin.register).toBe("function");
     });

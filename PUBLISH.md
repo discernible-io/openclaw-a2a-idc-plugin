@@ -72,7 +72,7 @@ openclaw plugins install clawhub:@identyclaw/openclaw-a2a-plugin
 
 1. `npx clawhub package inspect @identyclaw/openclaw-a2a-plugin`
 2. `git tag openclaw-a2a-plugin-v<version>`
-3. Runtime test on a Gateway: outbound RODiT JWT login, inbound JWT verification, `a2a_send_message` round-trip
+3. Runtime test on a Gateway: enable `plugins.entries.identyclaw-a2a`, outbound RODiT JWT login, inbound JWT verification, `a2a_send_message` round-trip
 4. Security scan may show **pending** until review completes
 
 ## License

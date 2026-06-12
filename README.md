@@ -58,7 +58,7 @@ This plugin handles **A2A wire protocol** (peer messaging). Install it alongside
 
 | Artifact | Install | Role |
 | --- | --- | --- |
-| **This plugin** (`a2a`) | `openclaw plugins install clawhub:@identyclaw/openclaw-a2a-plugin` | A2A send/receive, RODiT JWT on `POST /a2a` |
+| **This plugin** (`identyclaw-a2a`) | `openclaw plugins install clawhub:@identyclaw/openclaw-a2a-plugin` | A2A send/receive, RODiT JWT on `POST /a2a` |
 | IdentyClaw tools (`identyclaw-tools`) | `openclaw plugins install clawhub:@identyclaw/openclaw-identyclaw-plugin` | API login, HOLA, identity, DID — [`openclaw-identyclaw-plugin`](https://github.com/discernible-io/openclaw-identyclaw-plugin) |
 | Skill (workflows) | `openclaw skills install clawhub:identyclaw` | Operator playbooks and reference docs |
 | MCP (canonical docs) | `https://api.identyclaw.com/mcp` | Live IdentyClaw API documentation |
@@ -115,7 +115,7 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 {
     "plugins": {
         "entries": {
-            "a2a": {
+            "identyclaw-a2a": {
                 "enabled": true,
                 "config": {
                     "outbound": {
@@ -151,7 +151,7 @@ Non-auth `custom_headers` on individual agents still work (e.g. tracing headers)
 {
     "plugins": {
         "entries": {
-            "a2a": {
+            "identyclaw-a2a": {
                 "enabled": true,
                 "config": {
                     "inbound": {
@@ -295,7 +295,7 @@ exposure needed.
     },
     "plugins": {
         "entries": {
-            "a2a": {
+            "identyclaw-a2a": {
                 "enabled": true,
                 "config": {
                     "outbound": {
@@ -445,7 +445,7 @@ endpoint. Follow the steps below to make your agent reachable.
     },
     "plugins": {
         "entries": {
-            "a2a": {
+            "identyclaw-a2a": {
                 "enabled": true
             }
         }
@@ -483,7 +483,7 @@ configured OpenClaw agent ID, or requests to it will fail to route.
 {
     "plugins": {
         "entries": {
-            "a2a": {
+            "identyclaw-a2a": {
                 "enabled": true,
                 "config": {
                     "inbound": {

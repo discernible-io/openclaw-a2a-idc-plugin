@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, test } from "bun:test";
-import { buildRootConfigWithA2A, parseA2APluginConfig } from "../src/config.js";
+import { buildRootConfigWithA2A, PLUGIN_ID, parseA2APluginConfig } from "../src/config.js";
 import {
     assertUniqueA2AInboundKeyLabels,
     assertValidA2AInboundKeyLabel,
@@ -428,7 +428,7 @@ describe("buildRootConfigWithA2A", () => {
         const rootConfig = {
             plugins: {
                 entries: {
-                    a2a: {
+                    [PLUGIN_ID]: {
                         config: {
                             inbound: {
                                 apiKeys: [{ label: "alice", key: "abc" }],
@@ -444,7 +444,7 @@ describe("buildRootConfigWithA2A", () => {
         });
         const config = (
             (result.plugins as Record<string, unknown>).entries as Record<string, unknown>
-        ).a2a as Record<string, Record<string, unknown>>;
+        )[PLUGIN_ID] as Record<string, Record<string, unknown>>;
         const inbound = config.config.inbound as Record<string, unknown>;
         expect(inbound.apiKeys).toEqual([{ label: "alice", key: "abc" }]);
         expect(inbound.allowUnauthenticated).toBe(false);
@@ -455,7 +455,7 @@ describe("buildRootConfigWithA2A", () => {
         const rootConfig = {
             plugins: {
                 entries: {
-                    a2a: {
+                    [PLUGIN_ID]: {
                         config: {
                             inbound: {
                                 agentCard: {
@@ -474,7 +474,7 @@ describe("buildRootConfigWithA2A", () => {
         });
         const config = (
             (result.plugins as Record<string, unknown>).entries as Record<string, unknown>
-        ).a2a as Record<string, Record<string, unknown>>;
+        )[PLUGIN_ID] as Record<string, Record<string, unknown>>;
         const inbound = config.config.inbound as Record<string, unknown>;
         const agentCard = inbound.agentCard as Record<string, unknown>;
         expect(agentCard.name).toBe("Updated");

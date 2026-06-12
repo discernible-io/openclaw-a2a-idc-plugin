@@ -4,13 +4,14 @@
 
 import { describe, expect, mock, test } from "bun:test";
 
+import { PLUGIN_ID } from "../../src/config.js";
 import { createUpdateAgentCardTool } from "../../src/tools/update-agent-card.js";
 
 function makeDeps(existingConfig?: Record<string, unknown>) {
     const storedConfig = existingConfig ?? {
         plugins: {
             entries: {
-                a2a: {
+                [PLUGIN_ID]: {
                     config: {
                         inbound: {
                             agentCard: { name: "Original" },
@@ -60,8 +61,8 @@ describe("createUpdateAgentCardTool", () => {
         const written = deps.getWritten() as Record<string, unknown>;
         const plugins = written.plugins as Record<string, unknown>;
         const entries = plugins.entries as Record<string, unknown>;
-        const a2a = entries.a2a as Record<string, unknown>;
-        const config = a2a.config as Record<string, unknown>;
+        const entry = entries[PLUGIN_ID] as Record<string, unknown>;
+        const config = entry.config as Record<string, unknown>;
         const inbound = config.inbound as Record<string, unknown>;
         const agentCard = inbound.agentCard as Record<string, unknown>;
         expect(agentCard.name).toBe("New Name");
@@ -120,7 +121,7 @@ describe("createUpdateAgentCardTool", () => {
                 otherPlugin: true,
                 entries: {
                     otherEntry: {},
-                    a2a: {
+                    [PLUGIN_ID]: {
                         enabled: true,
                         config: {
                             outbound: { agents: {} },
@@ -142,9 +143,9 @@ describe("createUpdateAgentCardTool", () => {
         expect(plugins.otherPlugin).toBe(true);
         const entries = plugins.entries as Record<string, unknown>;
         expect(entries.otherEntry).toBeDefined();
-        const a2a = entries.a2a as Record<string, unknown>;
-        expect(a2a.enabled).toBe(true);
-        const config = a2a.config as Record<string, unknown>;
+        const entry = entries[PLUGIN_ID] as Record<string, unknown>;
+        expect(entry.enabled).toBe(true);
+        const config = entry.config as Record<string, unknown>;
         expect(config.outbound).toBeDefined();
         const inbound = config.inbound as Record<string, unknown>;
         const agentCard = inbound.agentCard as Record<string, unknown>;

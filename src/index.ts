@@ -18,6 +18,7 @@ import {
     type A2APluginConfig,
     buildRootConfigWithA2A,
     extractA2AEntry,
+    PLUGIN_ID,
     parseA2APluginConfig,
 } from "./config.js";
 import { AgentCardBuilder } from "./inbound/agent-card.js";
@@ -329,7 +330,7 @@ function registerCli(api: OpenClawPluginApi, pluginConfig: A2APluginConfig): voi
 }
 
 const a2aPlugin = definePluginEntry({
-    id: "a2a",
+    id: PLUGIN_ID,
     name: "A2A Protocol",
     description:
         "A2A protocol plugin for OpenClaw. Communicate with remote A2A agents and allow others to connect to your agent.",
@@ -703,18 +704,18 @@ const a2aPlugin = definePluginEntry({
             // rather than forcing a restart that changes nothing.
             noopPrefixes: isMultiAgentInbound
                 ? [
-                      "plugins.entries.a2a.config.inbound.agentCard",
+                      `plugins.entries.${PLUGIN_ID}.config.inbound.agentCard`,
                       ...inboundEndpoints.map(
                           (endpoint) =>
-                              `plugins.entries.a2a.config.inbound.agents.${endpoint.agentId}.agentCard`,
+                              `plugins.entries.${PLUGIN_ID}.config.inbound.agents.${endpoint.agentId}.agentCard`,
                       ),
                   ]
-                : ["plugins.entries.a2a.config.inbound.agentCard"],
+                : [`plugins.entries.${PLUGIN_ID}.config.inbound.agentCard`],
         });
 
         // --- Lifecycle service ---
         api.registerService({
-            id: "a2a",
+            id: PLUGIN_ID,
             start: async () => {
                 const startupCaveats: string[] = [];
                 let inboundInitFailures = 0;

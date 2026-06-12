@@ -88,7 +88,7 @@ function createApi(options?: {
         httpRoutes,
         services,
         api: {
-            id: "a2a",
+            id: "identyclaw-a2a",
             name: "A2A Protocol",
             source: "test",
             registrationMode: mode,
@@ -270,7 +270,7 @@ describe("plugin registration", () => {
 
         expect(reloadRegistrations).toEqual([
             {
-                noopPrefixes: ["plugins.entries.a2a.config.inbound.agentCard"],
+                noopPrefixes: ["plugins.entries.identyclaw-a2a.config.inbound.agentCard"],
             },
         ]);
     });
@@ -293,9 +293,9 @@ describe("plugin registration", () => {
         expect(reloadRegistrations).toEqual([
             {
                 noopPrefixes: [
-                    "plugins.entries.a2a.config.inbound.agentCard",
-                    "plugins.entries.a2a.config.inbound.agents.swe.agentCard",
-                    "plugins.entries.a2a.config.inbound.agents.pmo.agentCard",
+                    "plugins.entries.identyclaw-a2a.config.inbound.agentCard",
+                    "plugins.entries.identyclaw-a2a.config.inbound.agents.swe.agentCard",
+                    "plugins.entries.identyclaw-a2a.config.inbound.agents.pmo.agentCard",
                 ],
             },
         ]);
@@ -323,7 +323,7 @@ describe("plugin registration", () => {
 
         plugin.register(api as never);
 
-        const service = services.find((entry) => entry.id === "a2a");
+        const service = services.find((entry) => entry.id === "identyclaw-a2a");
         expect(service?.start).toBeDefined();
         await service?.start?.();
 

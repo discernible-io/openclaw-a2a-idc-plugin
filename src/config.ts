@@ -9,6 +9,9 @@ import {
     parseA2AInboundKeyLabel,
 } from "./utils/inbound-key-label.js";
 
+/** OpenClaw plugin id and `plugins.entries` key (unique on ClawHub; upstream claims `a2a`). */
+export const PLUGIN_ID = "identyclaw-a2a";
+
 /**
  * Skill config accepted from users — same as AgentSkill but with `tags` optional
  * and without `security` (handled at the agent card level).
@@ -631,7 +634,7 @@ export function extractA2AEntry(rootConfig: Record<string, unknown>): {
         ((rootConfig.plugins as Record<string, unknown> | undefined)?.entries as
             | Record<string, unknown>
             | undefined) ?? {};
-    const a2aEntry = (pluginsEntries.a2a ?? {}) as Record<string, unknown>;
+    const a2aEntry = (pluginsEntries[PLUGIN_ID] ?? {}) as Record<string, unknown>;
     const a2aConfig = (a2aEntry.config ?? {}) as Record<string, unknown>;
     return { pluginsEntries, a2aEntry, a2aConfig };
 }
@@ -722,7 +725,7 @@ export function buildRootConfigWithA2A(
             ...(rootConfig.plugins as Record<string, unknown>),
             entries: {
                 ...pluginsEntries,
-                a2a: { ...a2aEntry, config: merged },
+                [PLUGIN_ID]: { ...a2aEntry, config: merged },
             },
         },
     };
