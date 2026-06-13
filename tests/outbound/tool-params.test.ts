@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     normalizeA2AToolParams,
+    normalizeA2AToolResult,
     sanitizeOpenAiToolSchema,
 } from "../../src/outbound/tool-params.js";
 
@@ -61,6 +62,40 @@ describe("normalizeA2AToolParams", () => {
         ).toEqual({
             agentId: "camel",
             taskId: "keep-me",
+        });
+    });
+
+    test("strips whitespace-only optional strings", () => {
+        expect(
+            normalizeA2AToolParams({
+                agentId: "agent-b",
+                message: "hello",
+                taskId: "   ",
+                contextId: "\t",
+            }),
+        ).toEqual({
+            agentId: "agent-b",
+            message: "hello",
+        });
+    });
+});
+
+describe("normalizeA2AToolResult", () => {
+    test("adds snake_case aliases for task responses", () => {
+        expect(
+            normalizeA2AToolResult({
+                kind: "task",
+                id: "task-123",
+                contextId: "ctx-456",
+                status: { state: "completed" },
+            }),
+        ).toEqual({
+            kind: "task",
+            id: "task-123",
+            task_id: "task-123",
+            contextId: "ctx-456",
+            context_id: "ctx-456",
+            status: { state: "completed" },
         });
     });
 });

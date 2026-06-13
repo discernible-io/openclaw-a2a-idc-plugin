@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6 — 2026-06-13
+
+- Fix `a2a_send_message` failing after peer task creation: avoid SSE `tasks/resubscribe` followed by immediate `tasks/get` (HTTP 400 on OpenClaw/nginx ingress). Outbound monitoring now polls `tasks/get` instead.
+- Retry transient `tasks/get` HTTP 400 responses with short backoff.
+- Return `task_id` / `context_id` aliases in tool results (alongside `id` / `contextId`).
+- Strip whitespace-only optional tool params (`taskId`, `contextId`, etc.).
+- Read JSON-RPC request body before inbound auth to avoid request stream races.
+
 ## 0.2.5 — 2026-06-12
 
 - Republish to ClawHub (same `a2a_send_message` empty `taskId` fix as 0.2.4, aligned with git release commit).

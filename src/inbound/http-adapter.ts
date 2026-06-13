@@ -56,20 +56,18 @@ export class A2AHttpHandlers {
             return;
         }
 
-        const bodyResultPromise = this.readJsonBody(req);
-
-        const senderLabel = await this.resolveSenderLabel(req, res);
-        if (!senderLabel) {
-            return;
-        }
-
-        const bodyResult = await bodyResultPromise;
+        const bodyResult = await this.readJsonBody(req);
         if (!bodyResult.ok) {
             this.sendJson(res, 400, {
                 jsonrpc: "2.0",
                 id: null,
                 error: { code: -32700, message: bodyResult.error },
             });
+            return;
+        }
+
+        const senderLabel = await this.resolveSenderLabel(req, res);
+        if (!senderLabel) {
             return;
         }
 

@@ -58,10 +58,37 @@ export function normalizeA2AToolParams(
     }
 
     for (const [key, value] of Object.entries(out)) {
-        if (value === "" || value === null) {
+        if (value === null) {
             delete out[key];
+            continue;
+        }
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (trimmed.length === 0) {
+                delete out[key];
+            } else if (trimmed !== value) {
+                out[key] = trimmed;
+            }
         }
     }
 
+    return out;
+}
+
+/** LLM tools/docs refer to task_id / context_id; a2a-utils returns id / contextId. */
+export function normalizeA2AToolResult(
+    result: Record<string, unknown>,
+): Record<string, unknown> {
+    if (result.error === true) {
+        return result;
+    }
+
+    const out: Record<string, unknown> = { ...result };
+    if (out.kind === "task" && typeof out.id === "string") {
+        out.task_id = out.id;
+    }
+    if (typeof out.contextId === "string") {
+        out.context_id = out.contextId;
+    }
     return out;
 }

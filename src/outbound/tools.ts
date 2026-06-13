@@ -4,7 +4,6 @@
 
 import {
     type A2AAgents,
-    A2ASession,
     type A2AToolDefinition,
     A2ATools,
     ArtifactSettings,
@@ -18,7 +17,12 @@ import { createRoditOutboundAuthProvider } from "../auth/create-rodit-outbound-a
 import type { A2AAgentEntry, A2AOutboundAuthConfig } from "../config.js";
 import { type AgentTool, jsonResult } from "../types.js";
 import { AuthenticatedA2AAgents } from "./authenticated-agents.js";
-import { normalizeA2AToolParams, sanitizeOpenAiToolSchema } from "./tool-params.js";
+import { createPollingA2ASession } from "./polling-a2a-session.js";
+import {
+    normalizeA2AToolParams,
+    normalizeA2AToolResult,
+    sanitizeOpenAiToolSchema,
+} from "./tool-params.js";
 import { withOutboundAuthRetry } from "./retry.js";
 
 export type CreateOutboundToolsParams = {
@@ -66,7 +70,7 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
             ? new LocalFileStore(`${params.workspaceDir}/a2a/outbound/files`)
             : undefined;
 
-    const session = new A2ASession(agents as unknown as A2AAgents, {
+    const session = createPollingA2ASession(agents as unknown as A2AAgents, {
         taskStore,
         fileStore,
         sendMessageTimeout: params.sendMessageTimeout,
@@ -92,7 +96,14 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
             parameters: jsonSchema as TSchema,
             execute: async (_toolCallId: string, toolParams: Record<string, unknown>) =>
                 withOutboundAuthRetry(authProvider, async () =>
-                    jsonResult(await def.execute(normalizeA2AToolParams(toolParams))),
+                    jsonResult(
+                        normalizeA2AToolResult(
+                            (await def.execute(normalizeA2AToolParams(toolParams))) as Record<
+                                string,
+                                unknown
+                            >,
+                        ),
+                    ),
                 ),
         };
     });
