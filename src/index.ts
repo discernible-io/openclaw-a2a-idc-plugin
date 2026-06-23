@@ -442,15 +442,24 @@ const a2aPlugin = definePluginEntry({
         const configuredOutboundAgentCount = outbound?.agents
             ? Object.keys(outbound.agents).length
             : 0;
-        if (outbound?.agents && configuredOutboundAgentCount > 0) {
+        const resolvePeersByTokenId =
+            outbound?.auth?.provider === "rodit" && outbound.resolvePeersByTokenId !== false;
+        const shouldRegisterOutbound =
+            configuredOutboundAgentCount > 0 || resolvePeersByTokenId;
+        if (shouldRegisterOutbound && outbound) {
             if (outbound.auth?.provider === "rodit") {
                 api.logger.info("[a2a] Outbound auth enabled with RODiT P2P JWT login");
+                if (resolvePeersByTokenId && configuredOutboundAgentCount === 0) {
+                    api.logger.info(
+                        "[a2a] Outbound identity peer resolution enabled (send by Passport token_id)",
+                    );
+                }
             }
             configureOutboundTlsSkipVerify(outbound.tlsSkipVerify === true, (message) =>
                 api.logger.warn(message),
             );
             const outboundTools = createOutboundTools({
-                agents: outbound.agents,
+                agents: outbound.agents ?? {},
                 auth: outbound.auth,
                 stateDir,
                 workspaceDir,
@@ -463,6 +472,11 @@ const a2aPlugin = definePluginEntry({
                 sendMessageCharacterLimit: outbound.sendMessageCharacterLimit,
                 minimizedObjectStringLength: outbound.minimizedObjectStringLength,
                 viewArtifactCharacterLimit: outbound.viewArtifactCharacterLimit,
+                resolvePeersByTokenId: outbound.resolvePeersByTokenId,
+                persistResolvedPeers: outbound.persistResolvedPeers,
+                identityApiBaseUrl: outbound.identityApiBaseUrl,
+                onInfo: (message) => api.logger.info(message),
+                onWarn: (message) => api.logger.warn(message),
             });
             outboundAgents = outboundTools.agents;
             for (const tool of outboundTools.tools) {

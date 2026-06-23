@@ -5,8 +5,10 @@
 import { A2AAgents } from "@a2anet/a2a-utils";
 import type { AgentURLAndCustomHeaders } from "@a2anet/a2a-utils";
 
+import { isPassportTokenId } from "../auth/passport-token-id.js";
 import type { OutboundAuthProvider } from "../auth/outbound-auth.js";
 import type { A2AAgentEntry } from "../config.js";
+import type { TokenPeerResolver } from "./token-peer-resolver.js";
 
 function stripAuthorizationHeader(headers: Record<string, string>): Record<string, string> {
     const result: Record<string, string> = {};
@@ -48,10 +50,12 @@ export class AuthenticatedA2AAgents {
         agents: Record<string, A2AAgentEntry>,
         private readonly authProvider: OutboundAuthProvider | undefined,
         agentCardTimeout?: number,
+        private readonly tokenPeerResolver?: TokenPeerResolver,
     ) {
         this.inner = new A2AAgents(prepareAgentConfig(agents, authProvider !== undefined), {
             timeout: agentCardTimeout,
         });
+        this.tokenPeerResolver?.attachAgents(this);
     }
 
     get initializationErrors(): Record<string, string> {
@@ -89,7 +93,11 @@ export class AuthenticatedA2AAgents {
     }
 
     async getAgent(agentId: string): Promise<AgentURLAndCustomHeaders | null> {
-        const agent = await this.inner.getAgent(agentId);
+        let agent = await this.inner.getAgent(agentId);
+        if (!agent && this.tokenPeerResolver && isPassportTokenId(agentId)) {
+            await this.tokenPeerResolver.resolveAgentCardUrl(agentId);
+            agent = await this.inner.getAgent(agentId);
+        }
         if (!agent) {
             return null;
         }
@@ -128,5 +136,17 @@ export class AuthenticatedA2AAgents {
                 ? stripAuthorizationHeader(customHeaders)
                 : customHeaders;
         await this.inner.addAgent(agentId, url, headers);
+    }
+
+    /** Register a peer when absent; no-op if the id is already known. */
+    async registerAgentIfAbsent(
+        agentId: string,
+        url: string,
+        customHeaders?: Record<string, string>,
+    ): Promise<void> {
+        if (await this.inner.getAgent(agentId)) {
+            return;
+        }
+        await this.addAgent(agentId, url, customHeaders);
     }
 }

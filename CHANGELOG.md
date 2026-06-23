@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.4.0 — 2026-06-23
+
+- Resolve unknown outbound peers by Passport `token_id` on the send path: fetch `GET /api/identity/token/{tokenId}/full` with an IdentyClaw API JWT (NEAR creds), parse `dn.contactUri` into an Agent Card URL, register in memory (optional persist to `stateDir/a2a/outbound/peers.json`), then proceed with normal P2P JWT login and A2A messaging.
+- Add `outbound.resolvePeersByTokenId`, `outbound.persistResolvedPeers`, and `outbound.identityApiBaseUrl` config options; enable send-by-`token_id` with RODiT outbound auth even when `outbound.agents` is empty.
+
 ## 0.3.0 — 2026-06-23
 
 ### Breaking

@@ -18,6 +18,7 @@ import type { A2AAgentEntry, A2AOutboundAuthConfig } from "../config.js";
 import { type AgentTool, jsonResult } from "../types.js";
 import { AuthenticatedA2AAgents } from "./authenticated-agents.js";
 import { createPollingA2ASession } from "./polling-a2a-session.js";
+import { TokenPeerResolver } from "./token-peer-resolver.js";
 import {
     normalizeA2AToolParams,
     normalizeA2AToolResult,
@@ -39,6 +40,11 @@ export type CreateOutboundToolsParams = {
     sendMessageCharacterLimit?: number;
     minimizedObjectStringLength?: number;
     viewArtifactCharacterLimit?: number;
+    resolvePeersByTokenId?: boolean;
+    persistResolvedPeers?: boolean;
+    identityApiBaseUrl?: string;
+    onInfo?: (message: string) => void;
+    onWarn?: (message: string) => void;
 };
 
 export type CreateOutboundToolsResult = {
@@ -55,7 +61,24 @@ export type CreateOutboundToolsResult = {
  */
 export function createOutboundTools(params: CreateOutboundToolsParams): CreateOutboundToolsResult {
     const authProvider = createRoditOutboundAuthProvider(params.auth, params.agents);
-    const agents = new AuthenticatedA2AAgents(params.agents, authProvider, params.agentCardTimeout);
+    const resolvePeersByTokenId =
+        params.auth?.provider === "rodit" && params.resolvePeersByTokenId !== false;
+    const tokenPeerResolver = resolvePeersByTokenId
+        ? new TokenPeerResolver({
+              stateDir: params.stateDir,
+              persist: params.persistResolvedPeers === true,
+              identityApiBaseUrl: params.identityApiBaseUrl,
+              logLevel: params.auth?.logLevel,
+              onInfo: params.onInfo,
+              onWarn: params.onWarn,
+          })
+        : undefined;
+    const agents = new AuthenticatedA2AAgents(
+        params.agents,
+        authProvider,
+        params.agentCardTimeout,
+        tokenPeerResolver,
+    );
 
     const taskStore =
         params.taskStore !== false
