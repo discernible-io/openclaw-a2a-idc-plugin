@@ -17,7 +17,7 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 | **4 — identyclaw integration** | **Done** | `ensure_a2a_config`, `identyclaw-net`, `test-a2a` in identyclaw-openclaw (same-host dev) |
 | 5 — Multi-machine deploy | **Next** | One agent per host; public URLs + TLS; cross-host A2A |
 | **8 — Passport metadata auto-config** | **Planned** | Derive A2A URLs from on-chain `webhook_url`; see [Phase 8](#phase-8--passport-metadata-auto-config-planned) |
-| **9 — P2P RODiT login (peer-issued JWT)** | **In progress (9A–9C landed)** | Peer `login_server` → `login_client`; mediated default; see [Phase 9](#phase-9--p2p-rodit-login-peer-issued-jwt-in-progress) |
+| **9 — P2P RODiT login (peer-issued JWT)** | **Done** | P2P-only wire auth; mediated/dual/auto removed — see [Phase 9](#phase-9--p2p-rodit-login-done) |
 | 6 — Live testing | Not started | Tier 2–3 on separate machines |
 | 7 — Publish | Not started | npm + ClawHub after Tier 3 passes |
 
@@ -25,13 +25,13 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 
 > **Deployment constraint:** Production peers (e.g. Juanelo on host A, Archimedes on host B) run on **different machines**. Same-host `identyclaw-net` + container DNS is a **dev/staging shortcut only** — not the target topology.
 
-**Exit criteria for Phase 2:**
+**Exit criteria for Phase 2 (historical — superseded by P2P-only outbound in Phase 9):**
 
-1. `outbound.auth.provider: "rodit"` reads NEAR credentials from env (`IDENTYCLAW_*` by default).
-2. Plugin calls `@rodit/rodit-auth-be` `login_server` against IdentyClaw API → caches JWT.
+1. `outbound.auth.provider: "rodit"` uses NEAR Passport file credentials (`NEAR_CREDENTIALS_FILE_PATH`).
+2. Outbound obtains **per-peer** JWTs via P2P `login_server` → peer `/api/login`.
 3. Outbound A2A HTTP calls attach `Authorization: Bearer <jwt>`; retry once on 401 after cache invalidation.
-4. **CI gate:** unit tests pass with injected mocks at RODiT boundaries (cache hit, invalidate/refresh, 401 retry) — no live blockchain or IdentyClaw API required (see [Test strategy](#test-strategy)).
-5. **Staging gate (not local/CI default):** manual smoke — agent-a messages agent-b with inbound RODiT on both sides and real Passport credentials (cross-machine HTTPS in production; same-host `identyclaw-net` optional for dev).
+4. **CI gate:** unit tests pass with injected mocks at RODiT boundaries (per-peer cache, invalidate/refresh, 401 retry).
+5. **Staging gate:** manual smoke — agent-a messages agent-b with inbound RODiT on both sides and real Passport credentials.
 
 ---
 
@@ -41,7 +41,7 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 |------|------------------|
 | Peer agents authenticate without pre-shared A2A API keys | Inbound `POST /a2a` accepts short-lived IdentyClaw/RODiT JWTs; rejects missing/invalid tokens |
 | Stable peer identity | JWT claims map to a sender label (e.g. Passport `token_id` or NEAR account) used for inbound thread routing |
-| Outbound calls use login, not static secrets | `a2a_send_message` obtains/refreshes JWT from local Passport credentials |
+| Outbound calls use login, not static secrets | `a2a_send_message` obtains/refreshes **per-peer** JWT via P2P peer `/api/login` |
 | No gateway core changes | All work stays in the forked plugin + identyclaw bootstrap |
 | Compatible with identyclaw stack | One identyclaw agent per host; peers reach each other via public HTTPS (or private VPN); same-host `identyclaw-net` for local smoke only |
 | Metadata-driven discovery where possible | Own + peer A2A URLs derived from Passport `webhook_url` on-chain; env vars remain overrides |
@@ -66,29 +66,32 @@ Outbound: custom_headers.Authorization = Bearer ${STATIC_KEY}
 Discovery: GET /.well-known/agent-card.json (public)
 ```
 
-### Target (fork)
+### Target (fork — P2P-only)
 
 ```text
-Inbound:  Authorization: Bearer <RODiT JWT>
-            → rodit-auth-be validates signature, iss, aud, exp
-            → peer identity from claims (token_id / account_id)
-Outbound: RoditClient / IdentyClaw login → JWT cache → Bearer on A2A HTTP client
+Inbound:  Authorization: Bearer <P2P-issued RODiT JWT>
+            → rodit-auth-be validates signature, iss, aud (= own owner_id), exp
+            → peer identity from claims (token_id / rodit_id)
+            → /api/login* exposed for peer outbound login
+Outbound: login_server → peer /api/login → per-peer JWT cache → Bearer on A2A HTTP client
 Discovery: Agent Card advertises securitySchemes: HTTP Bearer JWT
 ```
 
 ```mermaid
 sequenceDiagram
   participant A as agent-a
-  participant API as api.identyclaw.com
-  participant B as agent-b /a2a
+  participant B as agent-b
 
-  Note over A: RoditClient + NEAR Passport
-  A->>API: Login → JWT
+  A->>B: GET /api/login/timestamp
+  B-->>A: challenge
+  A->>B: POST /api/login (Passport sign)
+  B-->>A: JWT (aud = B owner_id)
   A->>B: POST /a2a + Bearer JWT
-  B->>B: rodit-auth-be validates JWT
-  B->>B: route to main agent, sender = token_id
+  B->>B: validate JWT; route sender = rodit_id
   B-->>A: A2A task response
 ```
+
+IdentyClaw API (`api.identyclaw.com`) remains used by **identyclaw-tools** (HOLA, DID, identity) — not for A2A wire auth.
 
 ### External URL layout (same host, different paths)
 
@@ -237,7 +240,7 @@ Both repos are private to the Discernible org — clone locally when implementin
 |---------|----------------------------|---------------------------------------------|
 | **Inbound** — validate peer JWT on `POST /a2a` | Server middleware / token service | `validate_jwt_token_be` via `src/auth/rodit-inbound.ts`; `enforceSessionRegistration: false` for peer tokens |
 | **Inbound** — sender identity | JWT claims (`token_id`, etc.) | `inbound.auth.identityClaim` → A2A sender label |
-| **Outbound** — obtain JWT | Client `RoditClient.create({ role: "client" }).login_server()` | `RoditOutboundAuthProvider` in `src/auth/rodit-outbound.ts` — file creds via `NEAR_CREDENTIALS_FILE_PATH`, singleton `stateManager` |
+| **Outbound** — obtain JWT | Client `RoditClient.create({ role: "client" }).login_server()` against peer `/api/login` | `RoditP2pOutboundAuthProvider` in `src/auth/rodit-p2p-outbound.ts` — per-peer cache, file creds via `NEAR_CREDENTIALS_FILE_PATH` |
 | **Outbound** — attach Bearer | Client HTTP wrapper | `AuthenticatedA2AAgents` + `withOutboundAuthRetry` in `src/outbound/` |
 | **Outbound** — refresh on 401 | Client retry policy | `invalidate()` + single retry in `src/outbound/retry.ts` |
 | **Auto-config** — own public base | Passport `webhook_url` + `getConfigOwnRodit().own_rodit.metadata` (server) | `blockchainService.nearorg_rpc_tokensfromaccountid` in bootstrap / `src/auth/rodit-metadata.ts` (Phase 8) |
@@ -351,16 +354,12 @@ Replace static `custom_headers.Authorization` with dynamic tokens.
   "outbound": {
     "auth": {
       "provider": "rodit",
-      "credentialsEnv": {
-        "accountId": "IDENTYCLAW_ACCOUNT_ID",
-        "privateKey": "IDENTYCLAW_NEAR_PRIVATE_KEY",
-        "baseUrl": "IDENTYCLAW_BASE_URL"
-      },
       "jwtCacheTtlSeconds": 300
     },
     "agents": {
       "agent-b": {
-        "url": "http://openclaw-agent-b:18789/.well-known/agent-card.json"
+        "url": "http://openclaw-agent-b:18789/.well-known/agent-card.json",
+        "loginBaseUrl": "http://openclaw-agent-b:18789"
       }
     }
   }
@@ -369,11 +368,11 @@ Replace static `custom_headers.Authorization` with dynamic tokens.
 
 | Field | Purpose |
 |-------|---------|
-| `auth.provider` | `"rodit"` enables dynamic JWT (omit for legacy static headers only) |
-| `credentialsEnv.accountId` | Env var name holding NEAR account id (default `IDENTYCLAW_ACCOUNT_ID`) |
-| `credentialsEnv.privateKey` | Env var name holding base58/ed25519 private key (default `IDENTYCLAW_NEAR_PRIVATE_KEY`) |
-| `credentialsEnv.baseUrl` | Env var name for IdentyClaw API base URL used by `login_server` (default `IDENTYCLAW_BASE_URL`) |
-| `jwtCacheTtlSeconds` | In-memory JWT cache TTL before re-login (default 300) |
+| `auth.provider` | `"rodit"` enables P2P peer-issued JWT login |
+| `jwtCacheTtlSeconds` | Per-peer in-memory JWT cache TTL before re-login (default 300) |
+| `agents.*.loginBaseUrl` | Override P2P login target when it differs from Agent Card origin |
+
+Outbound login uses `NEAR_CREDENTIALS_FILE_PATH` (file passport) and `login_server` against each peer's `/api/login`. Removed: `credentialsEnv`, `mode`, mediated central-API login.
 
 Remove per-peer `custom_headers.Authorization` for RODiT peers (keep other `custom_headers` and non-RODiT static auth as overrides).
 
@@ -382,7 +381,8 @@ Remove per-peer `custom_headers.Authorization` for RODiT peers (keep other `cust
 | File | Purpose |
 |------|---------|
 | `src/auth/outbound-auth.ts` | `OutboundAuthProvider` interface |
-| `src/auth/rodit-outbound.ts` | `RoditOutboundAuthProvider` — env credentials, `login_server`, JWT cache |
+| `src/auth/rodit-p2p-outbound.ts` | `RoditP2pOutboundAuthProvider` — per-peer P2P login + JWT cache |
+| `src/auth/rodit-peer-login.ts` | `login_server` with peer base URL override |
 | `src/outbound/authenticated-agents.ts` | Injects dynamic `Authorization` into `@a2anet/a2a-utils` agent fetches |
 | `src/outbound/retry.ts` | 401 detection, cache invalidation, single retry |
 | `src/outbound/tools.ts` | Wires auth provider into outbound tool execution |
@@ -390,10 +390,10 @@ Remove per-peer `custom_headers.Authorization` for RODiT peers (keep other `cust
 Checklist:
 
 - [x] Add `OutboundAuthProvider` interface
-- [x] Implement `RoditOutboundAuthProvider`: `login_server` via `@rodit/rodit-auth-be`; cache JWT in memory with TTL
+- [x] Implement `RoditP2pOutboundAuthProvider`: P2P `login_server` per peer; cache JWT per `agentId`
 - [x] Hook into outbound HTTP client before `sendMessage` / `getTask` (via `AuthenticatedA2AAgents`)
 - [x] Refresh on 401 from peer (`withOutboundAuthRetry`)
-- [x] Unit tests green with injected `RoditLoginFn` (cache hit, invalidate refresh, 401 retry — `tests/auth/rodit-outbound.test.ts`, `tests/outbound/retry.test.ts`)
+- [x] Unit tests green with injected `RoditPeerLoginFn` (per-peer cache, invalidate refresh, 401 retry)
 - [ ] Staging smoke: live `login_server` + agent-a → agent-b over `identyclaw-net` (requires NEAR credentials; deferred to identyclaw — see [Test strategy](#test-strategy))
 - [x] Commit + push Phase 1 + Phase 2 together
 
@@ -492,7 +492,7 @@ Per host (operator task, not plugin code):
 - [ ] One identyclaw instance, one agent container
 - [ ] TLS termination at Caddy/nginx/Cloudflare for that agent’s public hostname
 - [ ] Pass-through paths: `/a2a`, `/.well-known/agent-card.json`, `/hooks/*`
-- [ ] `AGENT_*_A2A_PUBLIC_BASE_URL` + `inbound.publicBaseUrl` + `auth.audience` = public origin
+- [ ] `AGENT_*_A2A_PUBLIC_BASE_URL` → `inbound.publicBaseUrl` (discovery); `inbound.auth.audience` = probed own `owner_id`
 - [ ] `outbound.agents` points at **remote** peer HTTPS Agent Card URLs
 - [ ] Do not enable `allowUnauthenticated`
 - [ ] Firewall: expose 443 (and/or VPN); gateway Control UI stays `127.0.0.1` on host
@@ -511,7 +511,7 @@ Reduce manual `AGENT_*_A2A_PUBLIC_BASE_URL` and `outbound.agents` editing by rea
 
 | Gap today | Impact |
 |-----------|--------|
-| Bootstrap sets `inbound.publicBaseUrl` + `audience` from `AGENT_*_A2A_PUBLIC_BASE_URL` env | Drift from Passport `webhook_url`; `audience` often wrong vs live JWT `aud` |
+| Bootstrap sets `inbound.publicBaseUrl` from `AGENT_*_A2A_PUBLIC_BASE_URL` env; probes `audience` (`owner_id`) | Drift from Passport `webhook_url` for discovery; wrong `owner_id` if probe fails |
 | `build_a2a_peer_map` uses container DNS (`http://openclaw-agent-b:18789/...`) | Broken in pod mode; wrong for cross-machine prod |
 | `sync_identyclaw_env` hardcodes `IDENTYCLAW_BASE_URL=https://api.identyclaw.com` | Ignores per-Passport `subjectuniqueidentifier_url` |
 | Plugin `buildLoginConfig` passes synthetic metadata (only `subjectuniqueidentifier_url` from env) | Never loads on-chain Passport fields (`webhook_url`, `jwt_duration`, `token_id`) |
@@ -520,8 +520,8 @@ Reduce manual `AGENT_*_A2A_PUBLIC_BASE_URL` and `outbound.agents` editing by rea
 ### 8.2 Design principles
 
 1. **On-chain `webhook_url` is the canonical public base** when present; env vars (`AGENT_*_A2A_PUBLIC_BASE_URL`) override for emergencies / staging.
-2. **`publicBaseUrl` ≠ `audience`** — discovery URL and JWT validation string serve different roles; never copy one into the other without Tier 2 proof.
-3. **`audience` comes from a live JWT** — decode `aud` after `login_server`; optionally cross-check against on-chain `owner_id` as a hint only.
+2. **`publicBaseUrl` ≠ `audience`** — discovery URL vs inbound JWT `owner_id`; never copy public URL into `audience`.
+3. **`audience` comes from own passport `owner_id`** — bootstrap probes via `probe_rodit_own_owner_id`; override with `AGENT_*_A2A_AUDIENCE` only when probe fails.
 4. **Lazy + cache** — chain lookups at bootstrap (identyclaw) or first plugin auth call; cache in memory with TTL; mock in Tier 1 unit tests.
 5. **Warn, don't silently overwrite** — if env `publicBaseUrl` ≠ chain `webhook_url`, log a bootstrap warning (operator may be mid-migration).
 
@@ -537,7 +537,7 @@ Reduce manual `AGENT_*_A2A_PUBLIC_BASE_URL` and `outbound.agents` editing by rea
 | 8A.2 | **Own agent:** if `metadata.webhook_url` set and `AGENT_*_A2A_PUBLIC_BASE_URL` unset → set `inbound.publicBaseUrl` from `webhook_url` (trim trailing slash) |
 | 8A.3 | **Own agent:** set `inbound.auth.issuer` from `metadata.subjectuniqueidentifier_url` when present (else `IDENTYCLAW_API_BASE_URL` env) |
 | 8A.4 | **Own agent:** sync `IDENTYCLAW_BASE_URL` in `.env` from `subjectuniqueidentifier_url` instead of hardcoding `api.identyclaw.com` |
-| 8A.5 | **Audience (Tier 2 gate):** after metadata load, run one `login_server` smoke → decode JWT `aud` → write `inbound.auth.audience` to exact value; add optional `AGENT_*_A2A_AUDIENCE` env override |
+| 8A.5 | **Audience (Tier 2 gate):** probe `own_rodit.owner_id` → write `inbound.auth.audience`; add optional `AGENT_*_A2A_AUDIENCE` env override |
 | 8A.6 | **Mismatch lint:** compare `webhook_url` vs `agent_a2a_public_base_url()` / ingress URL → stderr warning if differ |
 | 8A.7 | Document in `env.example`: `webhook_url` on Passport should match ingress; env vars override chain |
 
@@ -637,7 +637,7 @@ Bootstrap may write these fields; manual `outbound.agents.<id>.url` remains vali
 | Repo | Files |
 |------|-------|
 | **identyclaw-agents** | `scripts/lib.sh` (`ensure_a2a_config`, `build_a2a_peer_map`, `sync_identyclaw_env`), `env.example`, `security-compliance-improvements.md` |
-| **this fork** | `src/auth/rodit-metadata.ts` (new), `src/auth/rodit-outbound.ts`, `src/config.ts`, `openclaw.plugin.json`, `tests/auth/rodit-metadata.test.ts` (new) |
+| **this fork** | `src/auth/rodit-metadata.ts` (new), `src/auth/rodit-p2p-outbound.ts`, `src/config.ts`, `openclaw.plugin.json`, `tests/auth/rodit-metadata.test.ts` (new) |
 | **idclawserver-idc** (docs only) | `references/token-metadata.md`, `references/openclaw-integration-guide.md` |
 
 ### 8.8 Suggested order vs Phases 5–7
@@ -655,23 +655,11 @@ Bootstrap may write these fields; manual `outbound.agents.<id>.url` remains vali
 
 ---
 
-## Phase 9 — P2P RODiT login (peer-issued JWT) *(in progress)*
+## Phase 9 — P2P RODiT login *(done — P2P-only)*
 
-Add **true peer-to-peer RODiT authentication** as defined by `@rodit/rodit-auth-be`: caller `login_server` → receiver `login_client` → caller validates returned JWT (mutual completion). **Keep mediated mode** (IdentyClaw API issues JWT for all peers — current production path on dedalo47/dedalo43) as the **default**; opt in to P2P per agent or per deployment.
+Peer-to-peer RODiT authentication per `@rodit/rodit-auth-be`: caller `login_server` → receiver `login_client` → caller validates returned JWT. **Mediated mode (central IdentyClaw API JWT shared across peers) was removed** — all A2A wire auth is P2P.
 
-### 9.1 Why Phase 9
-
-| Mediated mode (Phase 2, default) | P2P mode (Phase 9) |
-|----------------------------------|---------------------|
-| Caller `login_server` → `api.identyclaw.com` | Caller `login_server` → **peer** `{webhook_url}/api/login` |
-| Central API mints JWT; shared service `aud` | **Receiving agent** mints JWT via `login_client` |
-| Works like OAuth client-credentials via IdentyClaw | Uses RODiT mutual-auth contract (NEAR signature + peer validation) |
-| Requires IdentyClaw API for A2A outbound | **API optional** — peers authenticate directly |
-| Already live (dedalo47 ↔ dedalo43) | Target architecture for decentralized peer mesh |
-
-Mediated mode is **not removed** — it remains `outbound.auth.mode: "mediated"` (default) for backward compatibility and staged rollout.
-
-### 9.2 Target flow (P2P)
+### 9.1 Flow
 
 ```mermaid
 sequenceDiagram
@@ -691,73 +679,13 @@ sequenceDiagram
   B-->>A: A2A response
 ```
 
-IdentyClaw API (`api.identyclaw.com`) may still be used by **identyclaw-tools** (HOLA, DID, identity) — orthogonal to A2A wire auth in P2P mode.
-
-### 9.3 Auth modes (config)
-
-| `outbound.auth.mode` | Outbound login target | JWT issuer | Default |
-|----------------------|----------------------|------------|---------|
-| `mediated` | Passport `subjectuniqueidentifier_url` / `IDENTYCLAW_BASE_URL` | IdentyClaw API | **yes** |
-| `p2p` | Each peer's `{loginBaseUrl}/api/login` (from Agent Card URL or `webhook_url`) | Receiving peer | no |
-| `auto` | Try P2P per peer; fall back to mediated on failure | Mixed | no (Phase 9C) |
-
-| `inbound.auth.mode` | Accept on `POST /a2a` | `inbound.auth.audience` |
-|---------------------|----------------------|-------------------------|
-| `mediated` | JWT from IdentyClaw API (current) | Service provider `owner_id` (probed) |
-| `p2p` | JWT issued by **this** agent's `login_client` | **Own** passport `owner_id` |
-| `dual` | Either mediated or P2P tokens | Validate against configured audience rules (Phase 9B) |
-
-### 9.4 Implementation sub-phases
-
-#### Phase 9A — Plugin scaffolding *(done)*
-
-| Step | Action |
-|------|--------|
-| 9A.1 | Config: `outbound.auth.mode`, `inbound.roditLogin`, `inbound.auth.mode` |
-| 9A.2 | `RoditP2pOutboundAuthProvider` — per-peer JWT cache; `login_server` with peer base URL override |
-| 9A.3 | Inbound routes: `GET /api/login/timestamp`, `POST /api/login` → exported `login_client` |
-| 9A.4 | `agentCardUrlToLoginBase()` helper |
-| 9A.5 | Factory `createRoditOutboundAuthProvider()` selects mediated vs P2P |
-| 9A.6 | Tier 1 unit tests (mocks at login boundaries) |
-
-**Exit criteria 9A:** Config parses; P2P provider caches per agent; login routes register when `inbound.roditLogin.enabled: true`; mediated default unchanged.
-
-#### Phase 9B — Inbound dual validation + audience auto-config *(done in plugin; bootstrap wired)*
-
-| Step | Action |
-|------|--------|
-| 9B.1 | `inbound.auth.mode: dual` — accept mediated **or** P2P JWTs on `/a2a` |
-| 9B.2 | Bootstrap: `probe_rodit_own_owner_id` → `p2pAudience`; `IDENTYCLAW_A2A_INBOUND_AUTH_MODE=dual` |
-| 9B.3 | `roditLogin.enabled` when inbound mode is `p2p` or `dual` |
-| 9B.4 | Mismatch lint: mediated `aud` vs P2P `aud` documented in operator runbook |
-
-**Exit criteria 9B:** Tier 2 — P2P JWT from peer B accepted on B's `/a2a`; mediated JWT still accepted when `dual`.
-
-#### Phase 9C — `auto` mode + identyclaw bootstrap *(done)*
-
-| Step | Action |
-|------|--------|
-| 9C.1 | `outbound.auth.mode: auto` — P2P first, mediated fallback per call |
-| 9C.2 | identyclaw `ensure_a2a_config` env: `AGENT_*_A2A_*_AUTH_MODE`, `IDENTYCLAW_A2A_*_AUTH_MODE` |
-| 9C.3 | Phase 8B peer URLs feed P2P `loginBaseUrl` *(still Phase 8)* |
-
-**Exit criteria 9C:** Cross-machine Tier 3 with `mode: p2p` and no `IDENTYCLAW_BASE_URL` dependency for A2A send.
-
-#### Phase 9D — Dynamic peers (builds on 8D)
-
-| Step | Action |
-|------|--------|
-| 9D.1 | After inbound P2P JWT, register peer from `rodit_webhookurl` for outbound P2P login |
-| 9D.2 | `outbound.dynamicPeersFromJwt: true` |
-
-### 9.5 Config schema (fork)
+### 9.2 Config schema (current)
 
 ```json
 {
   "outbound": {
     "auth": {
       "provider": "rodit",
-      "mode": "mediated",
       "jwtCacheTtlSeconds": 300
     },
     "agents": {
@@ -771,15 +699,12 @@ IdentyClaw API (`api.identyclaw.com`) may still be used by **identyclaw-tools** 
     "publicBaseUrl": "https://agent-a.example.io:9443",
     "roditLogin": {
       "enabled": true,
-      "loginPath": "/api/login",
-      "timestampPath": "/api/login/timestamp",
-      "loginMode": "p2p"
+      "loginMode": "promiscuous"
     },
     "auth": {
       "provider": "rodit",
-      "mode": "dual",
-      "issuer": "https://agent-a.example.io:9443",
-      "audience": "<own owner_id for P2P; service owner_id for mediated when dual>"
+      "issuer": "https://api.identyclaw.com",
+      "audience": "<own passport owner_id>"
     }
   }
 }
@@ -787,25 +712,18 @@ IdentyClaw API (`api.identyclaw.com`) may still be used by **identyclaw-tools** 
 
 | Field | Purpose |
 |-------|---------|
-| `outbound.auth.mode` | `mediated` (default), `p2p`, or `auto` |
+| `outbound.auth.provider` | `"rodit"` — P2P peer login only |
 | `outbound.agents.*.loginBaseUrl` | Override P2P login target (else derived from Agent Card URL) |
-| `inbound.roditLogin.enabled` | Expose `/api/login` + timestamp on gateway |
-| `inbound.roditLogin.loginMode` | Maps to `SECURITY_OPTIONS_LOGIN_MODE` (`p2p`, `promiscuous`, `partner`) |
-| `inbound.auth.mode` | `mediated`, `p2p`, or `dual` |
+| `inbound.roditLogin` | Expose `/api/login` + timestamp (auto-enabled when inbound auth is `rodit`) |
+| `inbound.auth.audience` | Own passport `owner_id` — expected JWT `aud` for inbound P2P tokens |
 
-### 9.6 SDK note (peer base URL)
+**Removed config (legacy values log warnings):** `outbound.auth.mode`, `credentialsEnv`, `inbound.auth.mode`, `p2pAudience`, `p2pIssuer`.
 
-`login_server` in `@rodit/rodit-auth-be` resolves the POST target from `config_own_rodit.own_rodit.metadata.subjectuniqueidentifier_url`. Phase 9A **clones own config** with `subjectuniqueidentifier_url` set to the peer's `loginBaseUrl` before calling the exported `login_server(config, options)` — no SDK fork required. Long-term: upstream `options.targetBaseUrl` in rodit-auth-be.
+### 9.3 identyclaw bootstrap
 
-### 9.7 Test strategy (Phase 9)
+[`ensure_a2a_config`](https://github.com/discernible-io/identyclaw-agents/blob/main/scripts/lib.sh) probes [`probe_rodit_own_owner_id`](https://github.com/discernible-io/identyclaw-agents/blob/main/scripts/lib.sh) → `inbound.auth.audience`, enables `roditLogin`, writes P2P-only outbound auth. Legacy `IDENTYCLAW_A2A_*_AUTH_MODE` env vars are ignored with warnings.
 
-| Tier | Scope |
-|------|-------|
-| **Tier 1** | P2P provider per-agent cache; login route registration; peer base URL parsing; mediated default |
-| **Tier 2** | Live P2P: A `login_server` → B `/api/login` → JWT works on B `/a2a` |
-| **Tier 3** | Cross-host `a2a_send_message` with `mode: p2p`; mediated regression with `mode: mediated` |
-
-### 9.8 File map (Phase 9)
+### 9.4 File map
 
 | File | Role |
 |------|------|
@@ -813,19 +731,24 @@ IdentyClaw API (`api.identyclaw.com`) may still be used by **identyclaw-tools** 
 | `src/auth/rodit-peer-login.ts` | Peer base URL override + exported SDK `login_server` |
 | `src/auth/rodit-own-config.ts` | Load `getConfigOwnRodit()` after client init |
 | `src/inbound/rodit-login-routes.ts` | `login_client` + timestamp HTTP handlers |
-| `src/auth/rodit-outbound.ts` | `createRoditOutboundAuthProvider()` factory |
-| `src/config.ts` | Mode + `roditLogin` parsing |
-| `src/index.ts` | Register login routes when enabled |
+| `src/auth/create-rodit-outbound-auth.ts` | Returns `RoditP2pOutboundAuthProvider` |
+| `src/auth/rodit-inbound.ts` | P2P JWT validation (`aud` = configured `audience`) |
+| `src/config.ts` | Auth config parsing + legacy mode warnings |
+| `src/index.ts` | Register login routes; auto-enable when inbound auth is `rodit` |
 
-### 9.9 Suggested order vs Phase 8
+### 9.5 Test strategy
 
-| Order | Work | Rationale |
-|-------|------|-----------|
-| 1 | **9A** (scaffolding + routes) | Enables Tier 2 P2P smoke without removing mediated |
-| 2 | **8A** (own `webhook_url`) | P2P login targets need correct peer base |
-| 3 | **9B** (dual inbound) | Safe migration: both token types during rollout |
-| 4 | **9C + 8B** | Bootstrap + cross-machine Tier 3 |
-| 5 | **9D + 8D** | On-demand peers |
+| Tier | Scope |
+|------|-------|
+| **Tier 1** | Per-peer cache; login route registration; peer base URL parsing |
+| **Tier 2** | Live P2P: A `login_server` → B `/api/login` → JWT works on B `/a2a` |
+| **Tier 3** | Cross-host `a2a_send_message` with P2P only (no `IDENTYCLAW_BASE_URL` for A2A send) |
+
+### 9.6 Remaining (optional)
+
+| Step | Action |
+|------|--------|
+| 9D | Dynamic peers from inbound JWT (`outbound.dynamicPeersFromJwt: true`) — builds on Phase 8D |
 
 ---
 
@@ -837,8 +760,8 @@ RODiT auth depends on **NEAR Passport credentials**, **IdentyClaw API login**, a
 
 | Path | `@rodit/rodit-auth-be` call | Why local/CI cannot fully cover it |
 |------|----------------------------|-------------------------------------|
-| Outbound login | `login_server` | NEAR key material, IdentyClaw `POST /api/login`, Passport/session semantics |
-| Inbound verify | `validate_jwt_token_be` | JWT signed by IdentyClaw issuer; audience/iss tied to deployed agent URL |
+| Outbound login | P2P `login_server` → peer `/api/login` | NEAR key material, peer `login_client`, Passport/session semantics |
+| Inbound verify | `validate_jwt_token_be` | P2P JWT signed by receiver; `aud` = receiver `owner_id` |
 | End-to-end A2A | both + HTTP peer | Two agents on **separate hosts** with public URLs, matching `audience`, and Passport credentials |
 
 Do **not** block fork development on reproducing this stack locally. Block merges on **plugin logic** tested through injectable boundaries; run live checks in **identyclaw staging** before production rollout.
@@ -852,7 +775,7 @@ Do **not** block fork development on reproducing this stack locally. Block merge
 | Boundary | Production default | Test injection | Test files |
 |----------|-------------------|----------------|------------|
 | Inbound JWT verify | `defaultRoditJwtValidator` → `validate_jwt_token_be` | `RoditJwtValidator` param / `roditJwtValidator` option | `tests/auth/rodit-inbound.test.ts`, `tests/auth/authenticate-inbound.test.ts` |
-| Outbound JWT login | `defaultRoditLogin` → `login_server` | `RoditLoginFn` constructor arg | `tests/auth/rodit-outbound.test.ts` |
+| Outbound JWT login | `defaultRoditLogin` → `login_server` (P2P per peer) | `RoditLoginFn` constructor arg | `tests/auth/rodit-p2p-outbound.test.ts` |
 | Outbound 401 retry | `withOutboundAuthRetry` | mock `OutboundAuthProvider` | `tests/outbound/retry.test.ts` |
 
 **Coverage checklist (Tier 1):**
@@ -1020,7 +943,7 @@ Upstream layout may vary; locate equivalents after fork:
 | Public URL | `src/inbound/public-url.ts` |
 | Inbound auth | `src/auth/authenticate-inbound.ts`, `src/auth/rodit-inbound.ts` |
 | Outbound client | `src/outbound/tools.ts`, `src/outbound/authenticated-agents.ts` |
-| Outbound auth | `src/auth/outbound-auth.ts`, `src/auth/rodit-outbound.ts`, `src/outbound/retry.ts` |
+| Outbound auth | `src/auth/outbound-auth.ts`, `src/auth/rodit-p2p-outbound.ts`, `src/auth/create-rodit-outbound-auth.ts`, `src/outbound/retry.ts` |
 | Passport metadata (Phase 8) | `src/auth/rodit-metadata.ts` (new) |
 | Config types | config parser + JSON schema |
 | Agent Card builder | card generation + `securitySchemes` |

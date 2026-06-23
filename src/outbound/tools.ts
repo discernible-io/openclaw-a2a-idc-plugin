@@ -28,8 +28,6 @@ import { withOutboundAuthRetry } from "./retry.js";
 export type CreateOutboundToolsParams = {
     agents: Record<string, A2AAgentEntry>;
     auth?: A2AOutboundAuthConfig;
-    /** Logs allowed auth fallbacks (auto mode: P2P → mediated). */
-    logWarn?: (message: string) => void;
     stateDir: string;
     workspaceDir: string;
     taskStore?: boolean;
@@ -56,9 +54,7 @@ export type CreateOutboundToolsResult = {
  * the `a2a_` prefix is added here for OpenClaw namespacing.
  */
 export function createOutboundTools(params: CreateOutboundToolsParams): CreateOutboundToolsResult {
-    const authProvider = createRoditOutboundAuthProvider(params.auth, params.agents, {
-        logWarn: params.logWarn,
-    });
+    const authProvider = createRoditOutboundAuthProvider(params.auth, params.agents);
     const agents = new AuthenticatedA2AAgents(params.agents, authProvider, params.agentCardTimeout);
 
     const taskStore =

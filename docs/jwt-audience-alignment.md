@@ -11,9 +11,9 @@ How inbound A2A authentication depends on a strict `aud` string match, why boots
 | Item | Detail |
 |------|--------|
 | **Problem** | Receiving agents reject otherwise-valid JWTs with **401** when JWT `aud` ≠ `inbound.auth.audience` (character-for-character). |
-| **Root cause** | Bootstrap and docs *assume* IdentyClaw puts a specific string in `aud`; that assumption is often unverified. Convention mismatches (hostname vs full URL, port, scheme, trailing slash) are common. |
-| **Recommended fix** | **Align OpenClaw / plugin / identyclaw bootstrap config** to whatever IdentyClaw actually emits. Do **not** add audience normalization or other workarounds in `rodit-auth-be`. |
-| **Proof gate** | Tier 2 smoke: obtain a real JWT from `login_server`, decode `aud`, POST to `/a2a` — response must not be 401. |
+| **Root cause** | `inbound.auth.audience` must equal the receiving agent's passport `owner_id` — the `aud` P2P login mints. Copying `publicBaseUrl` into `audience` still fails. |
+| **Recommended fix** | **Align bootstrap / `openclaw.json`** to probed `own_rodit.owner_id` (or live P2P JWT `aud`). Do **not** add audience normalization in `rodit-auth-be`. |
+| **Proof gate** | Tier 2 smoke: P2P `login_server` → peer `/api/login`, decode JWT `aud`, `POST /a2a` — response must not be 401. |
 
 ---
 
@@ -60,20 +60,15 @@ function buildAudienceRodit(config) {
 
 ## Issuance vs validation (the contract)
 
-### What IdentyClaw / `rodit-auth-be` puts in the token
+### What P2P login puts in the token
 
-On `POST /api/login`, the server issues a JWT via `generate_jwt_token`. The `aud` claim is set from the **issuer’s** RODiT record on NEAR:
+When a caller completes P2P login (`login_server` → peer `POST /api/login`), the **receiving agent** issues a JWT via `login_client` / `generate_jwt_token`. The `aud` claim is the **receiver's** passport `owner_id`:
 
 ```
-aud = own_rodit.owner_id   // service provider RODiT, from blockchain
+aud = receiving_agent.own_rodit.owner_id   // hex Ed25519 public key (typical)
 ```
 
-Depending on how IdentyClaw (`idclawserver-idc`) minted that RODiT, `owner_id` may be:
-
-- A **hex-encoded Ed25519 public key** (typical RODiT default), or
-- A **string identity** configured for that deployment (e.g. hostname or URL), if the IdentyClaw server was set up that way.
-
-The A2A fork **expects** per-agent public identity in `aud` (hostname or URL peers use to call `POST /a2a`). Whether IdentyClaw actually issues tokens that way is an **operational fact** — it must be measured, not assumed.
+Each outbound call obtains a **separate** JWT per destination peer; tokens are not reusable across the mesh.
 
 ### What the receiving agent checks
 
@@ -90,36 +85,27 @@ A 401 **without** a token only proves the auth gate is on. It does **not** prove
 
 ## Why bootstrap is a common source of mismatch
 
-On identyclaw hosts (e.g. dedalo43), `ensure_a2a_config` writes `inbound.auth.audience` from `agent_a2a_audience` and `inbound.publicBaseUrl` from `agent_a2a_public_base_url`:
+On identyclaw hosts (e.g. dedalo43), `ensure_a2a_config` writes `inbound.auth.audience` from `agent_a2a_audience` (probes `own_rodit.owner_id` via `probe_rodit_own_owner_id`) and `inbound.publicBaseUrl` from `agent_a2a_public_base_url`:
 
 ```bash
 # scripts/lib.sh
 agent_a2a_audience() {
-  # AGENT_*_A2A_AUDIENCE when set; else public base URL or container DNS
+  # AGENT_*_A2A_AUDIENCE when set; else probe_rodit_own_owner_id
   ...
 }
 ```
 
-When `AGENT_*_A2A_AUDIENCE` is unset, audience falls back to the same value as `publicBaseUrl` — which can mismatch live JWT `aud`.
+When `AGENT_*_A2A_AUDIENCE` is unset, audience comes from the agent's own passport `owner_id` — **not** from `publicBaseUrl`.
 
-The fork README examples use **hostname only**:
-
-```json
-"audience": "agent-a.diholai.io",
-"publicBaseUrl": "https://agent-a.diholai.io"
-```
-
-If IdentyClaw’s live JWT uses one convention and bootstrap writes another, every authenticated A2A call fails with 401.
+`publicBaseUrl` (Agent Card / discovery) and `audience` (JWT validation) serve different roles. Do not copy one into the other.
 
 ### Typical mismatch matrix
 
-| Configured `audience` | Token `aud` might be |
-|-----------------------|----------------------|
-| `https://agent-a.identyclaw.com:9443` | `https://agent-a.identyclaw.com` |
-| `https://agent-a.identyclaw.com:9443` | `agent-a.identyclaw.com` |
-| `https://host:9443` | `http://host:9443` |
-| `https://host:9443` | `https://host:9443/` |
-| URL-shaped string | 64-char hex `owner_id` |
+| Configured `audience` | Token `aud` (P2P) |
+|-----------------------|-------------------|
+| `https://agent-a.identyclaw.com:9443` (wrong — URL in audience field) | 64-char hex `owner_id` |
+| Stale `owner_id` after passport rotation | New `owner_id` from live probe |
+| Empty / missing (probe failed) | Valid hex from peer-issued JWT |
 
 ---
 
@@ -129,19 +115,18 @@ If IdentyClaw’s live JWT uses one convention and bootstrap writes another, eve
 
 ### 1. Discover the live `aud` (Tier 2 — required)
 
-On a **sending** agent with Passport credentials loaded:
+On a **sending** agent, obtain a P2P JWT the same way outbound A2A does:
 
 ```bash
-# Obtain JWT the same way outbound A2A does (login_server against IDENTYCLAW_BASE_URL)
-# Then decode:
-JWT='<token-from-login>'
+# Complete P2P login to the peer (or use ./identyclaw.sh test-a2a-auth p2p)
+JWT='<token-from-peer-/api/login>'
 echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{aud, iss, rodit_id, exp}'
 ```
 
-On the **receiving** agent:
+On the **receiving** agent, confirm `inbound.auth.audience` matches that `aud` (own `owner_id`):
 
 ```bash
-jq '.plugins.entries.a2a.config.inbound.auth' \
+jq '.plugins.entries["identyclaw-a2a"].config.inbound.auth' \
   ~/identyclaw-agents-app/agents/agent-a/openclaw.json
 ```
 
@@ -151,21 +136,21 @@ jq '.plugins.entries.a2a.config.inbound.auth' \
 
 Set `inbound.auth.audience` to the decoded JWT value. Also confirm `inbound.auth.issuer` matches JWT `iss` (issuer comparison is slightly more forgiving on ports, but still align explicitly).
 
-Example after discovery (hostname convention):
+Example after discovery (hex `owner_id`):
 
 ```json
 {
   "plugins": {
     "entries": {
-      "a2a": {
+      "identyclaw-a2a": {
         "config": {
           "inbound": {
             "publicBaseUrl": "https://agent-a.identyclaw.com:9443",
             "auth": {
               "provider": "rodit",
               "issuer": "https://api.identyclaw.com",
-              "audience": "agent-a.identyclaw.com",
-              "identityClaim": "token_id"
+              "audience": "b1212dcd0d3042a5e767ad253fd179c7a111420d6ae903cd1e942d2a16ef8396",
+              "identityClaim": "rodit_id"
             }
           }
         }
@@ -244,15 +229,15 @@ Those changes hide configuration errors, break the RODiT contract for other cons
 
 ---
 
-## If Tier 2 shows `aud` is not URL-shaped
+## If Tier 2 shows unexpected `aud`
 
-If the decoded JWT `aud` is a **64-character hex** RODiT `owner_id` (not a hostname/URL), then per-agent URL audiences cannot work with the current “one `login_server` JWT for all peers” outbound model unless:
+P2P tokens should use the receiver's hex `owner_id`. If `aud` does not match `probe_rodit_own_owner_id` output:
 
-1. **IdentyClaw server** (`idclawserver-idc`) is configured to issue tokens with the intended `aud` per deployment, or
-2. **Operators** set `inbound.auth.audience` on each receiver to that shared hex value (only viable if all agents under the same IdentyClaw issuer share one audience), or
-3. **Future plugin work** adds per-peer login with an audience parameter (plugin + server contract change — still not an SDK validation workaround).
+1. Re-run bootstrap: `./identyclaw.sh restart agent-a`
+2. Set `AGENT_*_A2A_AUDIENCE` explicitly from the live JWT
+3. Verify the peer's `/api/login` is issuing tokens for the correct passport (not a stale plugin build)
 
-In all cases, the first step remains: **read the live JWT** and set config to match.
+Central-API mediated JWTs (shared `aud` across peers) are **no longer accepted** on `POST /a2a`.
 
 ---
 
@@ -275,8 +260,8 @@ Until Tier 2 passes on each host, treat production A2A as **configured but unpro
 | `inbound.auth.audience` | `openclaw.json` | Must equal JWT `aud` exactly |
 | `inbound.auth.issuer` | `openclaw.json` | Must equal JWT `iss` (IdentyClaw API URL) |
 | `inbound.publicBaseUrl` | `openclaw.json` | External URL for Agent Card / discovery |
-| `outbound.auth.provider` | `openclaw.json` | `"rodit"` for dynamic JWT via `login_server` |
-| `IDENTYCLAW_*` env | agent secrets / `.env` | Outbound login credentials (not in `openclaw.json`) |
+| `outbound.auth.provider` | `openclaw.json` | `"rodit"` for P2P peer-issued JWT per outbound peer |
+| `NEAR_CREDENTIALS_FILE_PATH` | agent secrets / `.env` | Passport file for P2P sign + login |
 | `AGENT_*_A2A_PUBLIC_BASE_URL` | identyclaw `env.local` | Bootstrap input for `publicBaseUrl` |
 | `AGENT_*_A2A_AUDIENCE` | identyclaw `env.local` | Bootstrap input for `audience` — overrides public URL when set |
 
@@ -284,6 +269,6 @@ Until Tier 2 passes on each host, treat production A2A as **configured but unpro
 
 ## Bottom line
 
-Audience is the **contract between IdentyClaw token issuance and the receiving agent’s OpenClaw config**. Bootstrap picks a value from public URL settings; the plugin enforces it strictly via `rodit-auth-be`. The solution is to **align that config with a live JWT** — through `openclaw.json`, identyclaw bootstrap env vars, and operator discipline — not to make `rodit-auth-be` jump through normalization hoops.
+Audience is the **contract between P2P token issuance (`aud` = receiver `owner_id`) and the receiving agent's `inbound.auth.audience`**. Bootstrap probes `own_rodit.owner_id` via `probe_rodit_own_owner_id`. The solution is to **align config with a live P2P JWT** — through `openclaw.json`, `AGENT_*_A2A_AUDIENCE`, and operator discipline — not to weaken `rodit-auth-be` validation.
 
 *Created from audience investigation on dedalo43 / identyclaw A2A RODiT integration.*

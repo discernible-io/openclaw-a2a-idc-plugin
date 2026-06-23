@@ -67,21 +67,13 @@ Both plugins share `IDENTYCLAW_ACCOUNT_ID`, `IDENTYCLAW_NEAR_PRIVATE_KEY`, and `
 
 ## 🔐 IdentyClaw usage (RODiT peers)
 
-This fork authenticates A2A peers with **RODiT / Passport JWTs** via [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be), instead of pre-shared A2A API keys. Outbound callers log in with NEAR Passport credentials; inbound peers present short-lived JWTs signed by the IdentyClaw API.
+This fork authenticates A2A peers with **peer-to-peer RODiT / Passport JWTs** via [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be), instead of pre-shared A2A API keys. Outbound callers sign with their NEAR Passport and obtain a **per-peer** JWT from each receiver's `/api/login`. Inbound agents validate peer-issued JWTs scoped to their own passport `owner_id`.
 
 Legacy **API key** auth remains available for development or non-RODiT peers (`inbound.auth.provider: "apiKey"`, or `allowApiKeyFallback: true` with RODiT).
 
 ### Environment variables
 
-Outbound RODiT login reads these env vars by default (override names with `outbound.auth.credentialsEnv`):
-
-| Variable | Purpose |
-| -------- | ------- |
-| `IDENTYCLAW_ACCOUNT_ID` | NEAR account id (Passport owner) |
-| `IDENTYCLAW_NEAR_PRIVATE_KEY` | Ed25519 private key (`ed25519:…` or base58) |
-| `IDENTYCLAW_BASE_URL` | IdentyClaw API base URL (e.g. `https://api.identyclaw.com`) |
-
-For `@rodit/rodit-auth-be` initialization (same layout as [`clienttest-idc`](https://github.com/discernible-io/clienttest-idc)):
+Outbound P2P login uses the NEAR Passport credentials file (same layout as [`clienttest-idc`](https://github.com/discernible-io/clienttest-idc)):
 
 | Variable | Purpose |
 | -------- | ------- |
@@ -89,7 +81,9 @@ For `@rodit/rodit-auth-be` initialization (same layout as [`clienttest-idc`](htt
 | `NEAR_CREDENTIALS_FILE_PATH` | Path to Passport JSON, e.g. `…/secrets/near-credentials/<hash>.json` |
 | `NEAR_CONTRACT_ID` | RODiT contract on mainnet (e.g. `genaaaa-identyclaw-com.near`) |
 
-Outbound login uses `RoditClient.create({ role: "client" }).login_server()` so the SDK loads the passport from the credentials file, initializes on-chain `serviceprovider_id`, and validates API-issued JWTs — do not call raw `login_server` with a hand-built config unless testing.
+`IDENTYCLAW_*` env vars remain used by **identyclaw-tools** (HOLA, DID, identity) on the same host — they are not required for A2A outbound JWT login.
+
+Outbound login calls `login_server` against each peer's `/api/login` (with `subjectuniqueidentifier_url` set to that peer's gateway base). JWTs are cached **per outbound peer** and scoped to that receiver's `aud`.
 
 Keep credentials in env or secrets files — not in `openclaw.json`.
 
@@ -138,10 +132,12 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 
 | Field | Type | Default | Description |
 | ----- | ---- | ------- | ----------- |
-| `auth.provider` | `"rodit"` | — | Enable `login_server` JWT acquisition for all outbound agents |
-| `auth.credentialsEnv` | `{ accountId, privateKey, baseUrl }` | `IDENTYCLAW_*` | Env var names for Passport credentials |
-| `auth.jwtCacheTtlSeconds` | `number` | `300` | In-memory JWT cache TTL before re-login |
+| `auth.provider` | `"rodit"` | — | Enable P2P peer-issued JWT login for all outbound agents |
+| `auth.jwtCacheTtlSeconds` | `number` | `300` | Per-peer in-memory JWT cache TTL before re-login |
+| `auth.peerLoginPath` | `string` | `/api/login` | Login path on the peer gateway |
+| `auth.peerTimestampPath` | `string` | `/api/login/timestamp` | Timestamp challenge path on the peer gateway |
 | `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
+| `agents.*.loginBaseUrl` | `string` | derived from Agent Card URL | Override P2P login target when it differs from the card origin |
 
 Non-auth `custom_headers` on individual agents still work (e.g. tracing headers).
 
@@ -159,8 +155,11 @@ Non-auth `custom_headers` on individual agents still work (e.g. tracing headers)
                         "auth": {
                             "provider": "rodit",
                             "issuer": "https://api.identyclaw.com",
-                            "audience": "agent-a.diholai.io",
+                            "audience": "<own passport owner_id>",
                             "identityClaim": "token_id"
+                        },
+                        "roditLogin": {
+                            "loginMode": "p2p"
                         },
                         "agentCard": {
                             "name": "Juanelo",
@@ -177,11 +176,13 @@ Non-auth `custom_headers` on individual agents still work (e.g. tracing headers)
 | Field | Type | Default | Description |
 | ----- | ---- | ------- | ----------- |
 | `auth.provider` | `"rodit"` \| `"apiKey"` \| `"none"` | `"apiKey"` | Inbound authentication mode |
-| `auth.issuer` | `string` | — | Expected JWT `iss` (IdentyClaw API URL) |
-| `auth.audience` | `string` | — | Expected JWT `aud` — **must match how peers reach this agent** |
+| `auth.issuer` | `string` | — | Expected JWT `iss` |
+| `auth.audience` | `string` | — | **Own passport `owner_id`** — expected JWT `aud` for P2P-issued peer tokens |
 | `auth.identityClaim` | `string` | `"token_id"` | JWT claim used as inbound sender label / thread key |
 | `auth.allowApiKeyFallback` | `boolean` | `false` | When `provider` is `rodit`, also accept configured `apiKeys` |
 | `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
+| `roditLogin.enabled` | `boolean` | `true` when `auth.provider` is `rodit` | Expose `GET /api/login/timestamp` and `POST /api/login` for peer outbound login |
+| `roditLogin.loginMode` | `"p2p"` \| `"partner"` \| `"promiscuous"` | `"promiscuous"` | Maps to `SECURITY_OPTIONS_LOGIN_MODE` |
 | `publicBaseUrl` | `string` | — | External base URL for Agent Card `url` fields (see below) |
 
 Verified peer JWTs map to a sender label (e.g. Passport `token_id`) used for inbound conversation routing, the same role `apiKeys[].label` plays for API-key auth.
@@ -196,7 +197,7 @@ By default, Agent Card URLs are derived from the incoming request (`Host`, `X-Fo
 }
 ```
 
-**Pair `publicBaseUrl` with `auth.audience`** when using RODiT — both should reflect the same external hostname peers call. Mismatched `audience` causes all inbound JWT validation to fail.
+**Set `auth.audience` to your own passport `owner_id`** (the `aud` your agent mints on `/api/login`). See [`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md) for Tier 2 discovery. `publicBaseUrl` is for Agent Card discovery and is separate from JWT `aud`.
 
 Example Agent Card endpoint after configuration:
 
@@ -346,9 +347,11 @@ exposure needed.
 | `sendMessageTimeout`          | `number`                                 | `60`    | Timeout in seconds for send message requests.               |
 | `getTaskTimeout`              | `number`                                 | `60`    | Timeout in seconds for get task monitoring.                 |
 | `getTaskPollInterval`         | `number`                                 | `5`     | Interval in seconds between task status polls.              |
-| `auth.provider`               | `"rodit"`                                | —       | Enable dynamic Passport JWT login for outbound calls (IdentyClaw fork). |
-| `auth.credentialsEnv`         | `{ accountId, privateKey, baseUrl }`     | `IDENTYCLAW_*` | Env var names for NEAR / IdentyClaw credentials.     |
-| `auth.jwtCacheTtlSeconds`     | `number`                                 | `300`   | JWT cache TTL in seconds before re-login.                   |
+| `auth.provider`               | `"rodit"`                                | —       | Enable P2P peer-issued JWT login for outbound calls (IdentyClaw fork). |
+| `auth.jwtCacheTtlSeconds`     | `number`                                 | `300`   | Per-peer JWT cache TTL in seconds before re-login.                   |
+| `auth.peerLoginPath`          | `string`                                 | `/api/login` | Login path on peer gateways.                              |
+| `auth.peerTimestampPath`      | `string`                                 | `/api/login/timestamp` | Timestamp challenge path on peer gateways.      |
+| `agents.*.loginBaseUrl`       | `string`                                 | derived | Override P2P login base when it differs from the Agent Card origin. |
 
 ### Tools
 

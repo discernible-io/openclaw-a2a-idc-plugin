@@ -2,7 +2,7 @@
     "id": "identyclaw-a2a",
     "name": "OpenClaw A2A Plugin",
     "description": "A2A peer messaging with RODiT / Passport JWT authentication",
-    "version": "0.2.6",
+    "version": "0.3.0",
     "activation": {
         "onStartup": true
     },
@@ -32,11 +32,7 @@
         },
         "outbound.auth.provider": {
             "label": "Outbound Auth Provider",
-            "help": "Use rodit to obtain Passport JWTs dynamically for peer calls"
-        },
-        "outbound.auth.credentialsEnv": {
-            "label": "Credential Env Vars",
-            "help": "Env var names for NEAR account id, private key, and IdentyClaw base URL"
+            "help": "Use rodit for P2P peer-issued JWT login (NEAR_CREDENTIALS_FILE_PATH)"
         },
         "outbound.auth.jwtCacheTtlSeconds": {
             "label": "JWT Cache TTL",
@@ -161,20 +157,6 @@
                                 "type": "string",
                                 "enum": ["rodit"]
                             },
-                            "mode": {
-                                "type": "string",
-                                "enum": ["mediated", "p2p", "auto"],
-                                "description": "mediated = IdentyClaw API JWT (default); p2p = peer login_client; auto = Phase 9C"
-                            },
-                            "credentialsEnv": {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "properties": {
-                                    "accountId": { "type": "string" },
-                                    "privateKey": { "type": "string" },
-                                    "baseUrl": { "type": "string" }
-                                }
-                            },
                             "jwtCacheTtlSeconds": { "type": "number" },
                             "peerLoginPath": { "type": "string" },
                             "peerTimestampPath": { "type": "string" },
@@ -217,14 +199,11 @@
                                 "type": "string",
                                 "enum": ["rodit", "apiKey", "none"]
                             },
-                            "mode": {
-                                "type": "string",
-                                "enum": ["mediated", "p2p", "dual"]
-                            },
                             "issuer": { "type": "string" },
-                            "audience": { "type": "string" },
-                            "p2pAudience": { "type": "string" },
-                            "p2pIssuer": { "type": "string" },
+                            "audience": {
+                                "type": "string",
+                                "description": "Own passport owner_id — expected JWT aud for P2P-issued peer tokens"
+                            },
                             "identityClaim": { "type": "string" },
                             "allowApiKeyFallback": { "type": "boolean" },
                             "logLevel": { "type": "string" }

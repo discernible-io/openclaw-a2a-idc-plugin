@@ -25,8 +25,8 @@ export type A2AAgentEntry = {
     custom_headers?: Record<string, string>;
 };
 
-export type RoditAuthMode = "mediated" | "p2p" | "auto";
-export type RoditInboundAuthMode = "mediated" | "p2p" | "dual";
+const REMOVED_OUTBOUND_AUTH_MODES = new Set(["mediated", "auto"]);
+const REMOVED_INBOUND_AUTH_MODES = new Set(["mediated", "dual"]);
 
 export type A2AInboundRoditLoginConfig = {
     enabled?: boolean;
@@ -44,15 +44,9 @@ export type A2AInboundKey = {
 export type A2AInboundAuthProvider = "rodit" | "apiKey" | "none";
 
 export type A2AInboundRoditAuthConfig = {
-    /** mediated (default), p2p, or dual (try both audience profiles). */
-    mode?: RoditInboundAuthMode;
     issuer: string;
-    /** Mediated JWT audience (IdentyClaw service owner_id) or sole audience when mode=p2p. */
+    /** Own passport owner_id — expected JWT aud for P2P-issued peer tokens. */
     audience: string;
-    /** Own passport owner_id — P2P JWT aud when mode is p2p or dual. */
-    p2pAudience?: string;
-    /** Expected iss for P2P-issued JWTs (defaults to inbound publicBaseUrl at runtime). */
-    p2pIssuer?: string;
     identityClaim?: string;
     allowApiKeyFallback?: boolean;
     /** Winston log level for `@rodit/rodit-auth-be` when loaded (default: error). */
@@ -61,17 +55,12 @@ export type A2AInboundRoditAuthConfig = {
 
 export type A2AInboundAuthConfig = {
     provider?: A2AInboundAuthProvider;
-    /** mediated = central API JWT (default); p2p = peer-issued; dual = Phase 9B */
-    mode?: RoditInboundAuthMode;
     issuer?: string;
+    /** Own passport owner_id — expected JWT aud for P2P-issued peer tokens. */
     audience?: string;
     identityClaim?: string;
     allowApiKeyFallback?: boolean;
     logLevel?: string;
-    /** Own passport owner_id for P2P inbound JWT validation. */
-    p2pAudience?: string;
-    /** Expected iss for P2P-issued JWTs. */
-    p2pIssuer?: string;
 };
 
 export type A2AAgentCardConfig = {
@@ -84,17 +73,8 @@ export type A2AInboundAgentConfig = {
     agentCard?: A2AAgentCardConfig;
 };
 
-export type A2AOutboundRoditCredentialsEnv = {
-    accountId?: string;
-    privateKey?: string;
-    baseUrl?: string;
-};
-
 export type A2AOutboundRoditAuthConfig = {
     provider?: "rodit";
-    /** mediated = IdentyClaw API login (default); p2p = peer login_client; auto = Phase 9C */
-    mode?: RoditAuthMode;
-    credentialsEnv?: A2AOutboundRoditCredentialsEnv;
     jwtCacheTtlSeconds?: number;
     /** P2P: path appended to peer loginBaseUrl (default /api/login). */
     peerLoginPath?: string;
@@ -375,15 +355,35 @@ function parseInboundAgents(
     return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
+function parseOutboundAuth(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+): A2AOutboundAuthConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
     }
     const raw = value as Record<string, unknown>;
     const provider = raw.provider === "rodit" ? "rodit" : undefined;
     const modeRaw = typeof raw.mode === "string" ? raw.mode.trim() : "";
-    const mode =
-        modeRaw === "mediated" || modeRaw === "p2p" || modeRaw === "auto" ? modeRaw : undefined;
+    if (modeRaw === "p2p") {
+        pushConfigWarning(
+            warnings,
+            'outbound.auth.mode "p2p" is no longer required — P2P peer login is always used when provider is "rodit"',
+        );
+    } else if (REMOVED_OUTBOUND_AUTH_MODES.has(modeRaw)) {
+        pushConfigWarning(
+            warnings,
+            `outbound.auth.mode "${modeRaw}" was removed; only P2P RODiT peer login is supported`,
+        );
+    } else if (modeRaw) {
+        pushConfigWarning(warnings, `outbound.auth.mode "${modeRaw}" is not recognized and was ignored`);
+    }
+    if (raw.credentialsEnv !== undefined) {
+        pushConfigWarning(
+            warnings,
+            "outbound.auth.credentialsEnv was removed; outbound P2P login uses NEAR_CREDENTIALS_FILE_PATH",
+        );
+    }
     const peerLoginPath =
         typeof raw.peerLoginPath === "string" ? raw.peerLoginPath.trim() || undefined : undefined;
     const peerTimestampPath =
@@ -394,46 +394,22 @@ function parseOutboundAuth(value: unknown): A2AOutboundAuthConfig | undefined {
     const logLevel =
         typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
 
-    let credentialsEnv: A2AOutboundRoditCredentialsEnv | undefined;
-    if (
-        raw.credentialsEnv &&
-        typeof raw.credentialsEnv === "object" &&
-        !Array.isArray(raw.credentialsEnv)
-    ) {
-        const creds = raw.credentialsEnv as Record<string, unknown>;
-        const accountId =
-            typeof creds.accountId === "string" ? creds.accountId.trim() || undefined : undefined;
-        const privateKey =
-            typeof creds.privateKey === "string" ? creds.privateKey.trim() || undefined : undefined;
-        const baseUrl =
-            typeof creds.baseUrl === "string" ? creds.baseUrl.trim() || undefined : undefined;
-        if (accountId || privateKey || baseUrl) {
-            credentialsEnv = {
-                ...(accountId ? { accountId } : {}),
-                ...(privateKey ? { privateKey } : {}),
-                ...(baseUrl ? { baseUrl } : {}),
-            };
-        }
-    }
-
     if (
         provider === undefined &&
-        mode === undefined &&
         peerLoginPath === undefined &&
         peerTimestampPath === undefined &&
         jwtCacheTtlSeconds === undefined &&
-        credentialsEnv === undefined &&
-        logLevel === undefined
+        logLevel === undefined &&
+        modeRaw === "" &&
+        raw.credentialsEnv === undefined
     ) {
         return undefined;
     }
 
     return {
         ...(provider ? { provider } : {}),
-        ...(mode ? { mode } : {}),
         ...(peerLoginPath ? { peerLoginPath } : {}),
         ...(peerTimestampPath ? { peerTimestampPath } : {}),
-        ...(credentialsEnv ? { credentialsEnv } : {}),
         ...(jwtCacheTtlSeconds !== undefined ? { jwtCacheTtlSeconds } : {}),
         ...(logLevel ? { logLevel } : {}),
     };
@@ -448,7 +424,7 @@ function parseOutbound(
     }
     const raw = value as Record<string, unknown>;
     const agents = parseAgents(raw.agents, warnings);
-    const auth = parseOutboundAuth(raw.auth);
+    const auth = parseOutboundAuth(raw.auth, warnings);
     const taskStore = typeof raw.taskStore === "boolean" ? raw.taskStore : undefined;
     const fileStore = typeof raw.fileStore === "boolean" ? raw.fileStore : undefined;
     const sendMessageCharacterLimit = parsePositiveNumber(raw.sendMessageCharacterLimit);
@@ -508,7 +484,10 @@ function parseInboundRoditLogin(value: unknown): A2AInboundRoditLoginConfig | un
     };
 }
 
-function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
+function parseInboundAuth(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+): A2AInboundAuthConfig | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined;
     }
@@ -519,43 +498,74 @@ function parseInboundAuth(value: unknown): A2AInboundAuthConfig | undefined {
             ? providerRaw
             : undefined;
     const modeRaw = typeof raw.mode === "string" ? raw.mode.trim() : "";
-    const mode =
-        modeRaw === "mediated" || modeRaw === "p2p" || modeRaw === "dual" ? modeRaw : undefined;
+    if (modeRaw === "p2p") {
+        pushConfigWarning(
+            warnings,
+            'inbound.auth.mode "p2p" is no longer required — P2P JWT validation is always used when provider is "rodit"',
+        );
+    } else if (REMOVED_INBOUND_AUTH_MODES.has(modeRaw)) {
+        pushConfigWarning(
+            warnings,
+            `inbound.auth.mode "${modeRaw}" was removed; only P2P-issued peer JWTs are accepted`,
+        );
+    } else if (modeRaw) {
+        pushConfigWarning(warnings, `inbound.auth.mode "${modeRaw}" is not recognized and was ignored`);
+    }
     const issuer = typeof raw.issuer === "string" ? raw.issuer.trim() || undefined : undefined;
-    const audience =
+    let audience =
         typeof raw.audience === "string" ? raw.audience.trim() || undefined : undefined;
+    const p2pAudience =
+        typeof raw.p2pAudience === "string" ? raw.p2pAudience.trim() || undefined : undefined;
+    if (p2pAudience) {
+        if (audience && audience !== p2pAudience) {
+            pushConfigWarning(
+                warnings,
+                "inbound.auth.p2pAudience disagrees with audience — using audience",
+            );
+        } else if (!audience) {
+            audience = p2pAudience;
+            pushConfigWarning(
+                warnings,
+                "inbound.auth.p2pAudience was renamed — set inbound.auth.audience to your own passport owner_id",
+            );
+        } else {
+            pushConfigWarning(
+                warnings,
+                "inbound.auth.p2pAudience was removed — use inbound.auth.audience",
+            );
+        }
+    }
+    if (raw.p2pIssuer !== undefined) {
+        pushConfigWarning(
+            warnings,
+            "inbound.auth.p2pIssuer was removed — set inbound.auth.issuer to the expected JWT iss",
+        );
+    }
     const identityClaim =
         typeof raw.identityClaim === "string" ? raw.identityClaim.trim() || undefined : undefined;
     const allowApiKeyFallback =
         typeof raw.allowApiKeyFallback === "boolean" ? raw.allowApiKeyFallback : undefined;
     const logLevel =
         typeof raw.logLevel === "string" ? raw.logLevel.trim() || undefined : undefined;
-    const p2pAudience =
-        typeof raw.p2pAudience === "string" ? raw.p2pAudience.trim() || undefined : undefined;
-    const p2pIssuer =
-        typeof raw.p2pIssuer === "string" ? raw.p2pIssuer.trim() || undefined : undefined;
 
     if (
         provider === undefined &&
-        mode === undefined &&
         issuer === undefined &&
         audience === undefined &&
-        p2pAudience === undefined &&
-        p2pIssuer === undefined &&
         identityClaim === undefined &&
         allowApiKeyFallback === undefined &&
-        logLevel === undefined
+        logLevel === undefined &&
+        modeRaw === "" &&
+        p2pAudience === undefined &&
+        raw.p2pIssuer === undefined
     ) {
         return undefined;
     }
 
     return {
         ...(provider ? { provider } : {}),
-        ...(mode ? { mode } : {}),
         ...(issuer ? { issuer } : {}),
         ...(audience ? { audience } : {}),
-        ...(p2pAudience ? { p2pAudience } : {}),
-        ...(p2pIssuer ? { p2pIssuer } : {}),
         ...(identityClaim ? { identityClaim } : {}),
         ...(allowApiKeyFallback !== undefined ? { allowApiKeyFallback } : {}),
         ...(logLevel ? { logLevel } : {}),
@@ -571,7 +581,7 @@ function parseInbound(
     }
     const raw = value as Record<string, unknown>;
     const agentCard = parseAgentCard(raw.agentCard, warnings);
-    const auth = parseInboundAuth(raw.auth);
+    const auth = parseInboundAuth(raw.auth, warnings);
     const allowUnauthenticated =
         typeof raw.allowUnauthenticated === "boolean" ? raw.allowUnauthenticated : undefined;
     const apiKeys = parseApiKeys(raw.apiKeys, warnings);

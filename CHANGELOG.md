@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+## 0.3.0 — 2026-06-23
+
+### Breaking
+
+- **Remove mediated and dual RODiT auth modes.** Outbound auth always uses P2P peer-issued JWTs (per-peer cache, audience-bound to the receiver). Inbound auth accepts only P2P-issued tokens (`aud` = own passport `owner_id`). `outbound.auth.mode`, `inbound.auth.mode`, `credentialsEnv`, `p2pAudience`, and `p2pIssuer` are removed; legacy values log config warnings. `roditLogin` routes auto-enable when `inbound.auth.provider` is `rodit` (set `roditLogin.enabled: false` to disable).
+- Update `README.md`, `docs/jwt-audience-alignment.md`, and `a2afork.md` for P2P-only auth and `owner_id` audience probing.
+
 ## 0.2.6 — 2026-06-13
 
 - Fix `a2a_send_message` failing after peer task creation: avoid SSE `tasks/resubscribe` followed by immediate `tasks/get` (HTTP 400 on OpenClaw/nginx ingress). Outbound monitoring now polls `tasks/get` instead.

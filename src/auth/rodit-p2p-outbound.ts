@@ -3,10 +3,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { OutboundAuthContext } from "./outbound-auth.js";
-import {
-    type RoditOutboundCredentials,
-    resolveRoditOutboundCredentials,
-} from "./rodit-outbound-credentials.js";
 import { type RoditPeerLoginFn, defaultRoditPeerLogin } from "./rodit-peer-login.js";
 import { agentCardUrlToLoginBase } from "./rodit-url.js";
 import type { A2AOutboundRoditAuthConfig, A2AAgentEntry } from "../config.js";
@@ -28,10 +24,6 @@ export class RoditP2pOutboundAuthProvider {
         private readonly peerLoginFn: RoditPeerLoginFn = defaultRoditPeerLogin,
     ) {
         this.agents = agents;
-    }
-
-    resolveCredentials(): RoditOutboundCredentials {
-        return resolveRoditOutboundCredentials(this.config);
     }
 
     private cacheTtlMs(): number {

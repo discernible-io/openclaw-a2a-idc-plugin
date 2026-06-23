@@ -283,31 +283,38 @@ describe("parseA2APluginConfig", () => {
     });
 
     test("parses outbound auth config", () => {
-        const result = parseA2APluginConfig({
-            outbound: {
-                auth: {
-                    provider: "rodit",
-                    credentialsEnv: {
-                        accountId: "IDENTYCLAW_ACCOUNT_ID",
-                        privateKey: "IDENTYCLAW_NEAR_PRIVATE_KEY",
-                        baseUrl: "IDENTYCLAW_BASE_URL",
+        const warnings: string[] = [];
+        const result = parseA2APluginConfig(
+            {
+                outbound: {
+                    auth: {
+                        provider: "rodit",
+                        jwtCacheTtlSeconds: 300,
                     },
-                    jwtCacheTtlSeconds: 300,
-                },
-                agents: {
-                    peer: { url: "https://example.com/.well-known/agent-card.json" },
+                    agents: {
+                        peer: { url: "https://example.com/.well-known/agent-card.json" },
+                    },
                 },
             },
-        });
+            warnings,
+        );
         expect(result.outbound?.auth).toEqual({
             provider: "rodit",
-            credentialsEnv: {
-                accountId: "IDENTYCLAW_ACCOUNT_ID",
-                privateKey: "IDENTYCLAW_NEAR_PRIVATE_KEY",
-                baseUrl: "IDENTYCLAW_BASE_URL",
-            },
             jwtCacheTtlSeconds: 300,
         });
+    });
+
+    test("warns when removed outbound auth modes are configured", () => {
+        const warnings: string[] = [];
+        parseA2APluginConfig(
+            {
+                outbound: {
+                    auth: { provider: "rodit", mode: "mediated" },
+                },
+            },
+            warnings,
+        );
+        expect(warnings.some((w) => w.includes("mediated") && w.includes("removed"))).toBe(true);
     });
 
     test("parses inbound auth config", () => {
@@ -482,61 +489,68 @@ describe("buildRootConfigWithA2A", () => {
         expect(agentCard.skills).toEqual([{ id: "chat", name: "Chat", description: "Talk" }]);
     });
 
-    test("parses Phase 9 outbound auth mode and peer login paths", () => {
-        const result = parseA2APluginConfig({
-            outbound: {
-                auth: {
-                    provider: "rodit",
-                    mode: "p2p",
-                    peerLoginPath: "/api/login",
-                    peerTimestampPath: "/api/login/timestamp",
-                },
-                agents: {
-                    peer: {
-                        url: "https://peer.example/.well-known/agent-card.json",
-                        loginBaseUrl: "https://peer.example:9443",
+    test("parses outbound peer login paths", () => {
+        const warnings: string[] = [];
+        const result = parseA2APluginConfig(
+            {
+                outbound: {
+                    auth: {
+                        provider: "rodit",
+                        mode: "p2p",
+                        peerLoginPath: "/api/login",
+                        peerTimestampPath: "/api/login/timestamp",
+                    },
+                    agents: {
+                        peer: {
+                            url: "https://peer.example/.well-known/agent-card.json",
+                            loginBaseUrl: "https://peer.example:9443",
+                        },
                     },
                 },
             },
-        });
+            warnings,
+        );
         expect(result.outbound?.auth).toEqual({
             provider: "rodit",
-            mode: "p2p",
             peerLoginPath: "/api/login",
             peerTimestampPath: "/api/login/timestamp",
         });
+        expect(warnings.some((w) => w.includes("no longer required"))).toBe(true);
         expect(result.outbound?.agents?.peer).toEqual({
             url: "https://peer.example/.well-known/agent-card.json",
             loginBaseUrl: "https://peer.example:9443",
         });
     });
 
-    test("parses Phase 9 inbound roditLogin and auth mode", () => {
-        const result = parseA2APluginConfig({
-            inbound: {
-                roditLogin: {
-                    enabled: true,
-                    loginMode: "p2p",
-                },
-                auth: {
-                    provider: "rodit",
-                    mode: "dual",
-                    audience: "service-aud",
-                    p2pAudience: "own-aud",
-                    p2pIssuer: "https://agent-a.example:9443",
+    test("parses inbound roditLogin and migrates legacy p2pAudience", () => {
+        const warnings: string[] = [];
+        const result = parseA2APluginConfig(
+            {
+                inbound: {
+                    roditLogin: {
+                        enabled: true,
+                        loginMode: "p2p",
+                    },
+                    auth: {
+                        provider: "rodit",
+                        mode: "dual",
+                        audience: "service-aud",
+                        p2pAudience: "own-aud",
+                        p2pIssuer: "https://agent-a.example:9443",
+                    },
                 },
             },
-        });
+            warnings,
+        );
         expect(result.inbound?.roditLogin).toEqual({
             enabled: true,
             loginMode: "p2p",
         });
         expect(result.inbound?.auth).toEqual({
             provider: "rodit",
-            mode: "dual",
             audience: "service-aud",
-            p2pAudience: "own-aud",
-            p2pIssuer: "https://agent-a.example:9443",
         });
+        expect(warnings.some((w) => w.includes("dual") && w.includes("removed"))).toBe(true);
+        expect(warnings.some((w) => w.includes("p2pIssuer"))).toBe(true);
     });
 });

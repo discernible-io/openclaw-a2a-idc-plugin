@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-export const VERSION = "0.2.6"; // x-release-please-version
+export const VERSION = "0.3.0"; // x-release-please-version
 
 import * as path from "node:path";
 
@@ -80,6 +80,13 @@ type InboundEndpointRuntime = {
 /**
  * Determine inbound auth configuration.
  */
+function isRoditLoginEnabled(pluginConfig: A2APluginConfig): boolean {
+    if (pluginConfig.inbound?.auth?.provider === "rodit") {
+        return pluginConfig.inbound.roditLogin?.enabled !== false;
+    }
+    return pluginConfig.inbound?.roditLogin?.enabled === true;
+}
+
 function resolveInboundAuth(
     pluginConfig: A2APluginConfig,
     logger: OpenClawPluginApi["logger"],
@@ -101,29 +108,17 @@ function resolveInboundAuth(
     if (provider === "rodit") {
         const issuer = inbound?.auth?.issuer?.trim();
         const audience = inbound?.auth?.audience?.trim();
-        const authMode = inbound?.auth?.mode ?? "mediated";
         if (!issuer || !audience) {
             logger.warn(
                 "[a2a] inbound.auth.provider is rodit but issuer/audience are missing — /a2a will reject all requests",
             );
         } else {
-            const modeLabel =
-                authMode === "mediated" ? "RODiT JWT validation" : `RODiT JWT validation (mode=${authMode})`;
-            logger.info(`[a2a] Inbound auth enabled with ${modeLabel}`);
+            logger.info("[a2a] Inbound auth enabled with RODiT P2P JWT validation");
         }
 
         const rodit: A2AInboundRoditAuthConfig = {
-            mode: authMode,
             issuer: issuer ?? "",
             audience: audience ?? "",
-            ...(inbound?.auth?.p2pAudience?.trim()
-                ? { p2pAudience: inbound.auth.p2pAudience.trim() }
-                : {}),
-            ...(inbound?.auth?.p2pIssuer?.trim()
-                ? { p2pIssuer: inbound.auth.p2pIssuer.trim() }
-                : inbound?.publicBaseUrl?.trim()
-                  ? { p2pIssuer: inbound.publicBaseUrl.trim().replace(/\/$/, "") }
-                  : {}),
             ...(inbound?.auth?.identityClaim ? { identityClaim: inbound.auth.identityClaim } : {}),
             ...(inbound?.auth?.logLevel ? { logLevel: inbound.auth.logLevel } : {}),
         };
@@ -178,11 +173,8 @@ function describeInboundAuthMode(pluginConfig: A2APluginConfig): string {
         return "none";
     }
     if (provider === "rodit") {
-        const parts = ["rodit"];
-        if (inbound?.auth?.mode && inbound.auth.mode !== "mediated") {
-            parts.push(`mode=${inbound.auth.mode}`);
-        }
-        if (inbound?.roditLogin?.enabled) {
+        const parts = ["rodit", "p2p"];
+        if (isRoditLoginEnabled(pluginConfig)) {
             parts.push("login-routes");
         }
         if (inbound?.auth?.allowApiKeyFallback && (inbound.apiKeys?.length ?? 0) > 0) {
@@ -347,9 +339,9 @@ const a2aPlugin = definePluginEntry({
             api.logger.warn(`[a2a] Config: ${warning}`);
         }
 
-        if (pluginConfig.inbound?.roditLogin?.enabled) {
+        if (isRoditLoginEnabled(pluginConfig)) {
             process.env.SECURITY_OPTIONS_LOGIN_MODE =
-                pluginConfig.inbound.roditLogin.loginMode ?? "promiscuous";
+                pluginConfig.inbound?.roditLogin?.loginMode ?? "promiscuous";
         }
 
         registerCli(api, pluginConfig);
@@ -452,8 +444,7 @@ const a2aPlugin = definePluginEntry({
             : 0;
         if (outbound?.agents && configuredOutboundAgentCount > 0) {
             if (outbound.auth?.provider === "rodit") {
-                const authMode = outbound.auth.mode ?? "mediated";
-                api.logger.info(`[a2a] Outbound auth enabled with RODiT JWT login (mode=${authMode})`);
+                api.logger.info("[a2a] Outbound auth enabled with RODiT P2P JWT login");
             }
             configureOutboundTlsSkipVerify(outbound.tlsSkipVerify === true, (message) =>
                 api.logger.warn(message),
@@ -461,7 +452,6 @@ const a2aPlugin = definePluginEntry({
             const outboundTools = createOutboundTools({
                 agents: outbound.agents,
                 auth: outbound.auth,
-                logWarn: (message) => api.logger.warn(message),
                 stateDir,
                 workspaceDir,
                 taskStore: outbound.taskStore,
@@ -664,8 +654,10 @@ const a2aPlugin = definePluginEntry({
             });
         }
 
-        const roditLogin = pluginConfig.inbound?.roditLogin;
-        if (roditLogin?.enabled) {
+        const roditLogin = isRoditLoginEnabled(pluginConfig)
+            ? pluginConfig.inbound?.roditLogin
+            : undefined;
+        if (roditLogin) {
             const loginPath = roditLogin.loginPath?.trim() || DEFAULT_RODIT_LOGIN_PATH;
             const timestampPath =
                 roditLogin.timestampPath?.trim() || DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH;
@@ -723,8 +715,7 @@ const a2aPlugin = definePluginEntry({
                 let outboundInitFailures = 0;
 
                 const inboundRodit =
-                    pluginConfig.inbound?.auth?.provider === "rodit" ||
-                    pluginConfig.inbound?.roditLogin?.enabled;
+                    pluginConfig.inbound?.auth?.provider === "rodit" || isRoditLoginEnabled(pluginConfig);
                 if (inboundRodit) {
                     try {
                         await getRoditOwnConfig(pluginConfig.inbound?.auth?.logLevel);

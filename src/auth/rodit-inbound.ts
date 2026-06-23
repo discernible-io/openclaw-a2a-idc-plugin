@@ -4,7 +4,7 @@
 
 import type { IncomingMessage } from "node:http";
 
-import type { A2AInboundRoditAuthConfig, RoditInboundAuthMode } from "../config.js";
+import type { A2AInboundRoditAuthConfig } from "../config.js";
 import { extractBearerToken } from "../inbound/auth.js";
 import { parseA2AInboundKeyLabel } from "../utils/inbound-key-label.js";
 import { loadRoditAuthBe } from "./rodit-runtime.js";
@@ -54,36 +54,12 @@ export const defaultRoditJwtValidator: RoditJwtValidator = async (token, config)
     });
 };
 
+/** P2P inbound JWTs use aud = this agent's own passport owner_id. */
 export function resolveInboundAudienceProfiles(
     config: A2AInboundRoditAuthConfig,
 ): AudienceProfile[] {
-    const mode: RoditInboundAuthMode = config.mode ?? "mediated";
-    const mediated: AudienceProfile = {
-        issuer: config.issuer,
-        audience: config.audience,
-    };
-
-    if (mode === "mediated") {
-        return [mediated];
-    }
-
-    const p2pAudience = config.p2pAudience?.trim() || config.audience.trim();
-    // P2P login_client JWTs use iss = caller passport URL (typically same as mediated issuer),
-    // aud = receiving agent owner_id — not the receiver gateway URL (p2pIssuer is legacy/doc only).
-    const p2p: AudienceProfile = {
-        issuer: config.issuer,
-        audience: p2pAudience,
-    };
-
-    if (mode === "p2p") {
-        return [p2p];
-    }
-
-    // dual — try mediated first (existing peers), then P2P-issued tokens
-    if (p2p.audience === mediated.audience && p2p.issuer === mediated.issuer) {
-        return [mediated];
-    }
-    return [mediated, p2p];
+    const audience = config.audience.trim();
+    return [{ issuer: config.issuer, audience }];
 }
 
 async function validateJwtWithProfiles(
@@ -102,7 +78,7 @@ async function validateJwtWithProfiles(
                 return result;
             }
         } catch {
-            // validate_jwt_token_be throws on mismatch — try next dual-mode profile
+            // validate_jwt_token_be throws on mismatch
         }
     }
     return null;

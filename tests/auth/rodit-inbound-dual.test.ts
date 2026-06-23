@@ -16,41 +16,20 @@ function fakeReq(authorization?: string): IncomingMessage {
 }
 
 describe("resolveInboundAudienceProfiles", () => {
-    test("mediated mode uses single profile", () => {
+    test("uses configured issuer and audience", () => {
         expect(
             resolveInboundAudienceProfiles({
-                mode: "mediated",
                 issuer: "https://api.identyclaw.com",
-                audience: "service-aud",
+                audience: "own-owner-id",
             }),
-        ).toEqual([{ issuer: "https://api.identyclaw.com", audience: "service-aud" }]);
-    });
-
-    test("dual mode returns mediated then p2p profiles", () => {
-        expect(
-            resolveInboundAudienceProfiles({
-                mode: "dual",
-                issuer: "https://api.identyclaw.com",
-                audience: "service-aud",
-                p2pAudience: "own-aud",
-                p2pIssuer: "https://agent-a.example:9443",
-            }),
-        ).toEqual([
-            { issuer: "https://api.identyclaw.com", audience: "service-aud" },
-            { issuer: "https://api.identyclaw.com", audience: "own-aud" },
-        ]);
+        ).toEqual([{ issuer: "https://api.identyclaw.com", audience: "own-owner-id" }]);
     });
 });
 
-describe("validateRoditInbound dual mode", () => {
-    test("accepts token matching second profile when first fails", async () => {
-        const attempts: string[] = [];
+describe("validateRoditInbound", () => {
+    test("accepts token matching audience profile", async () => {
         const validateJwt: RoditJwtValidator = async (_token, config) => {
-            attempts.push(config.audience);
-            if (config.audience === "service-aud") {
-                return { valid: false };
-            }
-            if (config.audience === "own-aud") {
+            if (config.audience === "own-owner-id") {
                 return { valid: true, payload: { rodit_id: "peer-a" } };
             }
             return { valid: false };
@@ -59,46 +38,37 @@ describe("validateRoditInbound dual mode", () => {
         const result = await validateRoditInbound(
             fakeReq("Bearer token"),
             {
-                mode: "dual",
                 issuer: "https://api.identyclaw.com",
-                audience: "service-aud",
-                p2pAudience: "own-aud",
-                p2pIssuer: "https://agent-b.example:4443",
+                audience: "own-owner-id",
                 identityClaim: "rodit_id",
             },
             validateJwt,
         );
 
         expect(result).toEqual({ ok: true, label: "peer-a" });
-        expect(attempts).toEqual(["service-aud", "own-aud"]);
     });
 
-    test("accepts token matching second profile when first throws", async () => {
+    test("retries after validator throws on mismatch", async () => {
         const attempts: string[] = [];
         const validateJwt: RoditJwtValidator = async (_token, config) => {
             attempts.push(config.audience);
-            if (config.audience === "service-aud") {
+            if (config.audience === "wrong-aud") {
                 throw new Error("Error 004: Invalid audience");
             }
-            if (config.audience === "own-aud") {
-                return { valid: true, payload: { rodit_id: "peer-a" } };
-            }
-            return { valid: false };
+            return { valid: true, payload: { rodit_id: "peer-a" } };
         };
 
         const result = await validateRoditInbound(
             fakeReq("Bearer token"),
             {
-                mode: "dual",
                 issuer: "https://api.identyclaw.com",
-                audience: "service-aud",
-                p2pAudience: "own-aud",
+                audience: "own-owner-id",
                 identityClaim: "rodit_id",
             },
             validateJwt,
         );
 
         expect(result).toEqual({ ok: true, label: "peer-a" });
-        expect(attempts).toEqual(["service-aud", "own-aud"]);
+        expect(attempts).toEqual(["own-owner-id"]);
     });
 });
