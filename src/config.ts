@@ -95,8 +95,6 @@ export type A2AOutboundConfig = {
     resolvePeersByTokenId?: boolean;
     /** Persist identity-resolved peers under stateDir/a2a/outbound/peers.json. */
     persistResolvedPeers?: boolean;
-    /** IdentyClaw API base for identity lookup (else IDENTITYCLAW_BASE_URL / passport metadata). */
-    identityApiBaseUrl?: string;
     taskStore?: boolean;
     fileStore?: boolean;
     sendMessageCharacterLimit?: number;
@@ -448,10 +446,6 @@ function parseOutbound(
               ? true
               : undefined;
     const persistResolvedPeers = raw.persistResolvedPeers === true ? true : undefined;
-    const identityApiBaseUrl =
-        typeof raw.identityApiBaseUrl === "string" && raw.identityApiBaseUrl.trim()
-            ? raw.identityApiBaseUrl.trim()
-            : undefined;
 
     const result: A2AOutboundConfig = {};
     if (agents) result.agents = agents;
@@ -459,7 +453,6 @@ function parseOutbound(
     if (tlsSkipVerify !== undefined) result.tlsSkipVerify = tlsSkipVerify;
     if (resolvePeersByTokenId !== undefined) result.resolvePeersByTokenId = resolvePeersByTokenId;
     if (persistResolvedPeers !== undefined) result.persistResolvedPeers = persistResolvedPeers;
-    if (identityApiBaseUrl) result.identityApiBaseUrl = identityApiBaseUrl;
     if (taskStore !== undefined) result.taskStore = taskStore;
     if (fileStore !== undefined) result.fileStore = fileStore;
     if (sendMessageCharacterLimit !== undefined)

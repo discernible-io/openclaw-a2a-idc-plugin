@@ -136,6 +136,10 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 | `auth.jwtCacheTtlSeconds` | `number` | `300` | Per-peer in-memory JWT cache TTL before re-login |
 | `auth.peerLoginPath` | `string` | `/api/login` | Login path on the peer gateway |
 | `auth.peerTimestampPath` | `string` | `/api/login/timestamp` | Timestamp challenge path on the peer gateway |
+| `resolvePeersByTokenId` | `boolean` | `true` (with `auth.provider: "rodit"`) | Resolve unknown Passport `token_id` peers on the send path via on-chain `metadata.webhook_url` |
+| `persistResolvedPeers` | `boolean` | `false` | Persist resolved peers to `stateDir/a2a/outbound/peers.json` |
+
+When `resolvePeersByTokenId` is enabled, `a2a_send_message` can target a bare Passport `token_id` not listed in `outbound.agents`. The plugin looks up the peer on NEAR (`nearorg_rpc_tokenfromroditid`), reads **`metadata.webhook_url`** (the same ingress URL used for P2P JWT `rodit_webhookurl`), and registers `{webhook_url}/.well-known/agent-card.json` before normal P2P login. DN `contactUri` is **not** used for A2A discovery — it is identity contact metadata (often `email:…`). Use `identyclaw_get_agent_identity` when you need DN traits.
 | `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
 | `agents.*.loginBaseUrl` | `string` | derived from Agent Card URL | Override P2P login target when it differs from the card origin |
 
@@ -352,10 +356,12 @@ exposure needed.
 | `auth.peerLoginPath`          | `string`                                 | `/api/login` | Login path on peer gateways.                              |
 | `auth.peerTimestampPath`      | `string`                                 | `/api/login/timestamp` | Timestamp challenge path on peer gateways.      |
 | `agents.*.loginBaseUrl`       | `string`                                 | derived | Override P2P login base when it differs from the Agent Card origin. |
+| `resolvePeersByTokenId`       | `boolean`                                | `true` with RODiT auth | Resolve unknown peers by on-chain `metadata.webhook_url`. |
+| `persistResolvedPeers`        | `boolean`                                | `false` | Persist resolved peers under `stateDir/a2a/outbound/peers.json`. |
 
 ### Tools
 
-The `a2a_*` tools are registered when at least one agent is configured (`agents`).
+The `a2a_*` tools are registered when at least one agent is configured (`agents`), or when RODiT outbound auth has `resolvePeersByTokenId` enabled (send by Passport `token_id` without preconfigured peers).
 The plugin is powered by [A2A Utils](https://github.com/a2anet/a2a-utils), for example tool usage, results, etc. see [A2A Utils JavaScript A2ATools](https://github.com/a2anet/a2a-utils/blob/main/javascript/README.md#a2atools).
 
 #### `a2a_get_agents`

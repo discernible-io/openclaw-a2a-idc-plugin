@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.4.1 — 2026-06-23
+
+- Fix `TokenPeerResolver` peer discovery: resolve unknown `token_id` values via on-chain `metadata.webhook_url` (`nearorg_rpc_tokenfromroditid`) instead of IdentyClaw `dn.contactUri` (which is identity contact metadata, not the A2A ingress URL).
+- Add `src/auth/rodit-peer-by-token-id.ts` and `src/auth/gateway-url.ts`; update `README.md` and `a2afork.md` for `webhook_url` as the discovery field.
+
 ## 0.4.0 — 2026-06-23
 
 - Resolve unknown outbound peers by Passport `token_id` on the send path: fetch `GET /api/identity/token/{tokenId}/full` with an IdentyClaw API JWT (NEAR creds), parse `dn.contactUri` into an Agent Card URL, register in memory (optional persist to `stateDir/a2a/outbound/peers.json`), then proceed with normal P2P JWT login and A2A messaging.

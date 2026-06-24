@@ -474,7 +474,6 @@ const a2aPlugin = definePluginEntry({
                 viewArtifactCharacterLimit: outbound.viewArtifactCharacterLimit,
                 resolvePeersByTokenId: outbound.resolvePeersByTokenId,
                 persistResolvedPeers: outbound.persistResolvedPeers,
-                identityApiBaseUrl: outbound.identityApiBaseUrl,
                 onInfo: (message) => api.logger.info(message),
                 onWarn: (message) => api.logger.warn(message),
             });

@@ -2,7 +2,7 @@
     "id": "identyclaw-a2a",
     "name": "OpenClaw A2A Plugin",
     "description": "A2A peer messaging with RODiT / Passport JWT authentication",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "activation": {
         "onStartup": true
     },
@@ -175,15 +175,11 @@
                     "tlsSkipVerify": { "type": "boolean" },
                     "resolvePeersByTokenId": {
                         "type": "boolean",
-                        "description": "Resolve unknown Passport token_id peers via GET /api/identity/token/{tokenId}/full (default true with rodit outbound auth)"
+                        "description": "Resolve unknown Passport token_id peers via on-chain metadata.webhook_url (default true with rodit outbound auth)"
                     },
                     "persistResolvedPeers": {
                         "type": "boolean",
                         "description": "Persist identity-resolved peers to stateDir/a2a/outbound/peers.json"
-                    },
-                    "identityApiBaseUrl": {
-                        "type": "string",
-                        "description": "IdentyClaw API base URL for identity lookup (defaults to IDENTITYCLAW_BASE_URL or passport metadata)"
                     }
                 }
             },

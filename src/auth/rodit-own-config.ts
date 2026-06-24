@@ -7,6 +7,11 @@ import { loadRoditAuthBe, type RoditLoginServerFn } from "./rodit-runtime.js";
 
 type RoditClientInstance = {
     getConfigOwnRodit: () => Promise<RoditOwnConfig | null | undefined>;
+    getBlockchainService: () => {
+        nearorg_rpc_tokenfromroditid: (
+            tokenId: string,
+        ) => Promise<{ token_id?: string; metadata?: { webhook_url?: string } } | null | undefined>;
+    };
 };
 
 type RoditClientConstructor = {
@@ -47,6 +52,8 @@ async function getRoditClient(logLevel?: string): Promise<RoditClientInstance> {
     }
     return roditClientPromise;
 }
+
+export { getRoditClient };
 
 export async function getRoditOwnConfig(logLevel?: string): Promise<RoditOwnConfig> {
     ensureRoditCredentialSource();

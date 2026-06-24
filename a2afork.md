@@ -141,7 +141,7 @@ Agent Card:                        https://agent-a.identyclaw.com:9443/.well-kno
 | `owner_id` | Hint for `inbound.auth.audience` — **must still match live JWT `aud`** ([`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md)) |
 | JWT claim `rodit_webhookurl` | Caller's declared public base on inbound A2A (from `peer_rodit.metadata.webhook_url` at login) |
 
-Public `GET /api/agents` does **not** expose `webhook_url` (only `tokenId`, `creature`, `face`). Peer discovery requires **NEAR chain lookup** (`nearorg_rpc_tokenfromroditid`) or authenticated `GET /api/identity/token/{tokenId}/full` — not the public agents list alone.
+Public `GET /api/agents` does **not** expose `webhook_url` (only `tokenId`, `creature`, `face`). Peer discovery for outbound send uses **NEAR chain lookup** (`nearorg_rpc_tokenfromroditid` → `metadata.webhook_url`) when `outbound.resolvePeersByTokenId` is enabled (plugin v0.4.1+). Authenticated `GET /api/identity/token/{tokenId}/full` returns DN traits including `contactUri` but that field is identity contact metadata, not the A2A ingress URL.
 
 ---
 

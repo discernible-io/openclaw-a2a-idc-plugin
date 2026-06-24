@@ -42,7 +42,6 @@ export type CreateOutboundToolsParams = {
     viewArtifactCharacterLimit?: number;
     resolvePeersByTokenId?: boolean;
     persistResolvedPeers?: boolean;
-    identityApiBaseUrl?: string;
     onInfo?: (message: string) => void;
     onWarn?: (message: string) => void;
 };
@@ -67,7 +66,6 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
         ? new TokenPeerResolver({
               stateDir: params.stateDir,
               persist: params.persistResolvedPeers === true,
-              identityApiBaseUrl: params.identityApiBaseUrl,
               logLevel: params.auth?.logLevel,
               onInfo: params.onInfo,
               onWarn: params.onWarn,

@@ -24,25 +24,27 @@ afterAll(() => {
 });
 
 describe("TokenPeerResolver", () => {
-    test("resolves token_id via identity API and caches agent card URL", async () => {
-        const tokenId = "abcdefghijkl";
+    test("resolves token_id via on-chain webhook_url and caches agent card URL", async () => {
+        const tokenId = "lncqsncdshcj";
         let fetchCount = 0;
-        const fetchTokenIdentityFullFn = async (id: string) => {
+        const fetchPeerRoditByTokenIdFn = async (id: string) => {
             fetchCount += 1;
             expect(id).toBe(tokenId);
             return {
-                tokenId: id,
-                dn: { contactUri: "https:peer.example.com:9443" },
+                token_id: id,
+                metadata: { webhook_url: "https://webhook.discernible.io:7443" },
             };
         };
 
         const resolver = new TokenPeerResolver({
             stateDir: tmpDir(),
-            fetchTokenIdentityFullFn,
+            fetchPeerRoditByTokenIdFn,
         });
 
         const cardUrl = await resolver.resolveAgentCardUrl(tokenId);
-        expect(cardUrl).toBe("https://peer.example.com:9443/.well-known/agent-card.json");
+        expect(cardUrl).toBe(
+            "https://webhook.discernible.io:7443/.well-known/agent-card.json",
+        );
         expect(resolver.getKnownAgentCardUrl(tokenId)).toBe(cardUrl);
 
         await resolver.resolveAgentCardUrl(tokenId);
@@ -52,15 +54,15 @@ describe("TokenPeerResolver", () => {
     test("persists resolved peers when enabled", async () => {
         const tokenId = "lmnopqrstuvw";
         const stateDir = tmpDir();
-        const fetchTokenIdentityFullFn = async () => ({
-            tokenId,
-            dn: { contactUri: "https://saved.example.com" },
+        const fetchPeerRoditByTokenIdFn = async () => ({
+            token_id: tokenId,
+            metadata: { webhook_url: "https://saved.example.com" },
         });
 
         const resolver = new TokenPeerResolver({
             stateDir,
             persist: true,
-            fetchTokenIdentityFullFn,
+            fetchPeerRoditByTokenIdFn,
         });
 
         await resolver.resolveAgentCardUrl(tokenId);
@@ -78,7 +80,7 @@ describe("TokenPeerResolver", () => {
         const reloadedResolver = new TokenPeerResolver({
             stateDir,
             persist: true,
-            fetchTokenIdentityFullFn: async () => {
+            fetchPeerRoditByTokenIdFn: async () => {
                 throw new Error("should not refetch when hydrated from disk");
             },
         });
@@ -90,14 +92,31 @@ describe("TokenPeerResolver", () => {
         expect(cardUrl).toBe("https://saved.example.com/.well-known/agent-card.json");
     });
 
-    test("rejects identity without contactUri", async () => {
+    test("rejects peer without metadata.webhook_url", async () => {
         const resolver = new TokenPeerResolver({
             stateDir: tmpDir(),
-            fetchTokenIdentityFullFn: async () => ({ tokenId: "abcdefghijkl", dn: {} }),
+            fetchPeerRoditByTokenIdFn: async (id) => ({
+                token_id: id,
+                metadata: {},
+            }),
         });
 
         await expect(resolver.resolveAgentCardUrl("abcdefghijkl")).rejects.toThrow(
-            /no dn\.contactUri/,
+            /no usable metadata\.webhook_url/,
+        );
+    });
+
+    test("does not use dn.contactUri when webhook_url is missing", async () => {
+        const resolver = new TokenPeerResolver({
+            stateDir: tmpDir(),
+            fetchPeerRoditByTokenIdFn: async (id) => ({
+                token_id: id,
+                metadata: { userselected_dn: "ContactUri=email:identyclaw.com:user@example.com" },
+            }),
+        });
+
+        await expect(resolver.resolveAgentCardUrl("abcdefghijkl")).rejects.toThrow(
+            /no usable metadata\.webhook_url/,
         );
     });
 });
