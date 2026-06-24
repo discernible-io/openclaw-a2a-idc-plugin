@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.4.2 — 2026-06-24
+
+- Wire `TokenPeerResolver` to try IdentyClaw `GET /api/identity/token/{id}/full` first (`metadata.webhook_url`), then fall back to on-chain `nearorg_rpc_tokenfromroditid` when the API is unavailable or has no webhook.
+- Add `extractWebhookUrlFromIdentity()` in `gateway-url.ts`; optional `fetchIdentityFullFn` for tests; record `source: "api" | "chain"` in persisted `peers.json`.
+
 ## 0.4.1 — 2026-06-23
 
 - Fix `TokenPeerResolver` peer discovery: resolve unknown `token_id` values via on-chain `metadata.webhook_url` (`nearorg_rpc_tokenfromroditid`) instead of IdentyClaw `dn.contactUri` (which is identity contact metadata, not the A2A ingress URL).

@@ -16,6 +16,10 @@ type CachedJwt = {
 
 export type TokenIdentityFullResponse = {
     tokenId?: string;
+    metadata?: {
+        webhook_url?: string | null;
+        webhookUrl?: string | null;
+    } | null;
     dn?: {
         contactUri?: string | null;
     } | null;
@@ -54,9 +58,7 @@ export function resetIdentyclawApiClientCacheForTests(): void {
     jwtCache = null;
 }
 
-export async function resolveIdentityApiBaseUrl(
-    override?: string,
-): Promise<string> {
+export async function resolveIdentityApiBaseUrl(override?: string): Promise<string> {
     const configured = override?.trim() || process.env.IDENTYCLAW_BASE_URL?.trim();
     if (configured) {
         return normalizeIdentityApiBaseUrl(configured);
@@ -68,9 +70,7 @@ export async function resolveIdentityApiBaseUrl(
 
     const ownConfig = await getRoditOwnConfig();
     const fromMetadata = ownConfig.own_rodit.metadata.subjectuniqueidentifier_url?.trim();
-    cachedApiBaseUrl = normalizeIdentityApiBaseUrl(
-        fromMetadata || DEFAULT_IDENTITY_API_BASE_URL,
-    );
+    cachedApiBaseUrl = normalizeIdentityApiBaseUrl(fromMetadata || DEFAULT_IDENTITY_API_BASE_URL);
     return cachedApiBaseUrl;
 }
 
@@ -92,8 +92,7 @@ async function getApiJwt(options: IdentyclawApiClientOptions): Promise<string> {
     });
 
     const ttlSeconds = options.jwtCacheTtlSeconds ?? DEFAULT_JWT_CACHE_TTL_SECONDS;
-    const expiresAtMs =
-        parseJwtExpiryMs(token) ?? now + Math.max(1, ttlSeconds) * 1000;
+    const expiresAtMs = parseJwtExpiryMs(token) ?? now + Math.max(1, ttlSeconds) * 1000;
     jwtCache = { token, expiresAtMs };
     return token;
 }

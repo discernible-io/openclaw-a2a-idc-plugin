@@ -5,19 +5,23 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { webhookUrlToAgentCardUrl } from "../auth/gateway-url.js";
+import { extractWebhookUrlFromIdentity, webhookUrlToAgentCardUrl } from "../auth/gateway-url.js";
 import {
-    fetchPeerRoditByTokenId,
-    type PeerRodit,
-} from "../auth/rodit-peer-by-token-id.js";
+    type TokenIdentityFullResponse,
+    fetchTokenIdentityFull,
+} from "../auth/identyclaw-api-client.js";
 import { isPassportTokenId, normalizePassportTokenId } from "../auth/passport-token-id.js";
+import { type PeerRodit, fetchPeerRoditByTokenId } from "../auth/rodit-peer-by-token-id.js";
 import type { AuthenticatedA2AAgents } from "./authenticated-agents.js";
+
+type PeerResolutionSource = "api" | "chain";
 
 type PersistedPeerRegistry = Record<
     string,
     {
         url: string;
         resolvedAt: string;
+        source?: PeerResolutionSource;
     }
 >;
 
@@ -27,23 +31,27 @@ export type TokenPeerResolverOptions = {
     logLevel?: string;
     onInfo?: (message: string) => void;
     onWarn?: (message: string) => void;
+    fetchIdentityFullFn?: typeof fetchTokenIdentityFull;
     fetchPeerRoditByTokenIdFn?: typeof fetchPeerRoditByTokenId;
 };
 
 /**
- * Resolves Passport token_id values to A2A Agent Card URLs via on-chain RODiT
- * metadata.webhook_url, then registers them on the outbound agent registry.
+ * Resolves Passport token_id values to A2A Agent Card URLs via IdentyClaw API
+ * GET /full (metadata.webhook_url), with on-chain RODiT fallback, then registers
+ * them on the outbound agent registry.
  */
 export class TokenPeerResolver {
     private readonly memory = new Map<string, string>();
     private readonly inFlight = new Map<string, Promise<string | null>>();
     private readonly registryPath: string;
+    private readonly fetchIdentityFull: typeof fetchTokenIdentityFull;
     private readonly fetchPeerRodit: typeof fetchPeerRoditByTokenId;
     private agents: AuthenticatedA2AAgents | undefined;
     private hydratePromise: Promise<void> | null = null;
 
     constructor(private readonly options: TokenPeerResolverOptions) {
         this.registryPath = path.join(options.stateDir, "a2a", "outbound", "peers.json");
+        this.fetchIdentityFull = options.fetchIdentityFullFn ?? fetchTokenIdentityFull;
         this.fetchPeerRodit = options.fetchPeerRoditByTokenIdFn ?? fetchPeerRoditByTokenId;
     }
 
@@ -74,12 +82,12 @@ export class TokenPeerResolver {
         let registry: PersistedPeerRegistry = {};
         try {
             if (fs.existsSync(this.registryPath)) {
-                registry = JSON.parse(fs.readFileSync(this.registryPath, "utf8")) as PersistedPeerRegistry;
+                registry = JSON.parse(
+                    fs.readFileSync(this.registryPath, "utf8"),
+                ) as PersistedPeerRegistry;
             }
         } catch (err) {
-            this.options.onWarn?.(
-                `[a2a] Failed to load persisted peer registry: ${String(err)}`,
-            );
+            this.options.onWarn?.(`[a2a] Failed to load persisted peer registry: ${String(err)}`);
             return;
         }
 
@@ -90,9 +98,7 @@ export class TokenPeerResolver {
             try {
                 await this.registerPeer(tokenId, entry.url, { persist: false, log: false });
             } catch (err) {
-                this.options.onWarn?.(
-                    `[a2a] Skipped persisted peer ${tokenId}: ${String(err)}`,
-                );
+                this.options.onWarn?.(`[a2a] Skipped persisted peer ${tokenId}: ${String(err)}`);
             }
         }
     }
@@ -125,20 +131,45 @@ export class TokenPeerResolver {
     }
 
     private async resolveAndRegister(tokenId: string): Promise<string | null> {
-        const peerRodit = await this.fetchPeerRodit(tokenId, {
-            logLevel: this.options.logLevel,
+        let cardUrl: string | null = null;
+        let source: PeerResolutionSource = "api";
+
+        try {
+            const identity = await this.fetchIdentityFull(tokenId, {
+                logLevel: this.options.logLevel,
+            });
+            cardUrl = this.agentCardUrlFromIdentity(identity);
+        } catch {
+            // API errors fall through to on-chain lookup.
+        }
+
+        if (!cardUrl) {
+            source = "chain";
+            const peerRodit = await this.fetchPeerRodit(tokenId, {
+                logLevel: this.options.logLevel,
+            });
+            cardUrl = this.agentCardUrlFromPeerRodit(tokenId, peerRodit);
+        }
+
+        await this.registerPeer(tokenId, cardUrl, {
+            persist: this.options.persist === true,
+            source,
         });
-        const cardUrl = this.agentCardUrlFromPeerRodit(tokenId, peerRodit);
-        await this.registerPeer(tokenId, cardUrl, { persist: this.options.persist === true });
         return cardUrl;
+    }
+
+    private agentCardUrlFromIdentity(identity: TokenIdentityFullResponse): string | null {
+        const webhookUrl = extractWebhookUrlFromIdentity(identity);
+        if (!webhookUrl) {
+            return null;
+        }
+        return webhookUrlToAgentCardUrl(webhookUrl);
     }
 
     private agentCardUrlFromPeerRodit(tokenId: string, peerRodit: PeerRodit): string {
         const cardUrl = webhookUrlToAgentCardUrl(peerRodit.metadata?.webhook_url ?? "");
         if (!cardUrl) {
-            throw new Error(
-                `RODiT ${tokenId} has no usable metadata.webhook_url for A2A ingress`,
-            );
+            throw new Error(`RODiT ${tokenId} has no usable metadata.webhook_url for A2A ingress`);
         }
         return cardUrl;
     }
@@ -146,7 +177,7 @@ export class TokenPeerResolver {
     private async registerPeer(
         tokenId: string,
         cardUrl: string,
-        opts: { persist: boolean; log?: boolean },
+        opts: { persist: boolean; log?: boolean; source?: PeerResolutionSource },
     ): Promise<void> {
         const normalized = normalizePassportTokenId(tokenId);
         this.memory.set(normalized, cardUrl);
@@ -156,21 +187,27 @@ export class TokenPeerResolver {
         }
 
         if (opts.persist) {
-            this.persistPeer(normalized, cardUrl);
+            this.persistPeer(normalized, cardUrl, opts.source);
         }
 
         if (opts.log !== false) {
+            const sourceLabel =
+                opts.source === "chain"
+                    ? "on-chain RODiT metadata.webhook_url"
+                    : "IdentyClaw API /full metadata.webhook_url";
             this.options.onInfo?.(
-                `[a2a] Registered outbound peer ${normalized} from RODiT metadata.webhook_url (${cardUrl})`,
+                `[a2a] Registered outbound peer ${normalized} from ${sourceLabel} (${cardUrl})`,
             );
         }
     }
 
-    private persistPeer(tokenId: string, cardUrl: string): void {
+    private persistPeer(tokenId: string, cardUrl: string, source?: PeerResolutionSource): void {
         let registry: PersistedPeerRegistry = {};
         try {
             if (fs.existsSync(this.registryPath)) {
-                registry = JSON.parse(fs.readFileSync(this.registryPath, "utf8")) as PersistedPeerRegistry;
+                registry = JSON.parse(
+                    fs.readFileSync(this.registryPath, "utf8"),
+                ) as PersistedPeerRegistry;
             }
         } catch {
             registry = {};
@@ -179,6 +216,7 @@ export class TokenPeerResolver {
         registry[tokenId] = {
             url: cardUrl,
             resolvedAt: new Date().toISOString(),
+            ...(source ? { source } : {}),
         };
 
         fs.mkdirSync(path.dirname(this.registryPath), { recursive: true });

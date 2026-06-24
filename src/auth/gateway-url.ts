@@ -3,6 +3,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { normalizeGatewayBase } from "./contact-uri.js";
+import type { TokenIdentityFullResponse } from "./identyclaw-api-client.js";
+
+export function extractWebhookUrlFromIdentity(
+    identity: Pick<TokenIdentityFullResponse, "metadata">,
+): string | null {
+    const raw = identity.metadata?.webhook_url ?? identity.metadata?.webhookUrl ?? "";
+    const trimmed = String(raw ?? "").trim();
+    return trimmed || null;
+}
 
 export function webhookUrlToGatewayBase(webhookUrl: string): string | null {
     const trimmed = String(webhookUrl ?? "").trim();

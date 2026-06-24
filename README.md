@@ -136,10 +136,10 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 | `auth.jwtCacheTtlSeconds` | `number` | `300` | Per-peer in-memory JWT cache TTL before re-login |
 | `auth.peerLoginPath` | `string` | `/api/login` | Login path on the peer gateway |
 | `auth.peerTimestampPath` | `string` | `/api/login/timestamp` | Timestamp challenge path on the peer gateway |
-| `resolvePeersByTokenId` | `boolean` | `true` (with `auth.provider: "rodit"`) | Resolve unknown Passport `token_id` peers on the send path via on-chain `metadata.webhook_url` |
+| `resolvePeersByTokenId` | `boolean` | `true` (with `auth.provider: "rodit"`) | Resolve unknown Passport `token_id` peers via IdentyClaw API `/full`, then on-chain `metadata.webhook_url` fallback |
 | `persistResolvedPeers` | `boolean` | `false` | Persist resolved peers to `stateDir/a2a/outbound/peers.json` |
 
-When `resolvePeersByTokenId` is enabled, `a2a_send_message` can target a bare Passport `token_id` not listed in `outbound.agents`. The plugin looks up the peer on NEAR (`nearorg_rpc_tokenfromroditid`), reads **`metadata.webhook_url`** (the same ingress URL used for P2P JWT `rodit_webhookurl`), and registers `{webhook_url}/.well-known/agent-card.json` before normal P2P login. DN `contactUri` is **not** used for A2A discovery — it is identity contact metadata (often `email:…`). Use `identyclaw_get_agent_identity` when you need DN traits.
+When `resolvePeersByTokenId` is enabled, `a2a_send_message` can target a bare Passport `token_id` not listed in `outbound.agents`. The plugin tries `GET /api/identity/token/{tokenId}/full` (authenticated with your NEAR creds), reads **`metadata.webhook_url`**, and falls back to NEAR chain lookup (`nearorg_rpc_tokenfromroditid`) when the API is unavailable or has no webhook. It then registers `{webhook_url}/.well-known/agent-card.json` before normal P2P login. DN `contactUri` is **not** used for A2A discovery — it is identity contact metadata (often `email:…`). Use `identyclaw_get_agent_identity` when you need DN traits.
 | `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
 | `agents.*.loginBaseUrl` | `string` | derived from Agent Card URL | Override P2P login target when it differs from the card origin |
 
@@ -356,7 +356,7 @@ exposure needed.
 | `auth.peerLoginPath`          | `string`                                 | `/api/login` | Login path on peer gateways.                              |
 | `auth.peerTimestampPath`      | `string`                                 | `/api/login/timestamp` | Timestamp challenge path on peer gateways.      |
 | `agents.*.loginBaseUrl`       | `string`                                 | derived | Override P2P login base when it differs from the Agent Card origin. |
-| `resolvePeersByTokenId`       | `boolean`                                | `true` with RODiT auth | Resolve unknown peers by on-chain `metadata.webhook_url`. |
+| `resolvePeersByTokenId`       | `boolean`                                | `true` with RODiT auth | Resolve unknown peers via API `/full`, then on-chain `metadata.webhook_url`. |
 | `persistResolvedPeers`        | `boolean`                                | `false` | Persist resolved peers under `stateDir/a2a/outbound/peers.json`. |
 
 ### Tools
