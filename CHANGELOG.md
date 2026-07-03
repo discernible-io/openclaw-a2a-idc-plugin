@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.3 — 2026-07-03
+
+- Bump `@rodit/rodit-auth-be` to `9.12.0`.
+
 ## 0.4.2 — 2026-06-24
 
 - Wire `TokenPeerResolver` to try IdentyClaw `GET /api/identity/token/{id}/full` first (`metadata.webhook_url`), then fall back to on-chain `nearorg_rpc_tokenfromroditid` when the API is unavailable or has no webhook.
