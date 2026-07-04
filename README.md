@@ -1,16 +1,29 @@
-# OpenClaw A2A Plugin (IdentyClaw fork)
+# IdentyClaw A2A Gateway Component
 
-> **Fork notice:** This is `@identyclaw/openclaw-a2a-plugin`, an IdentyClaw-maintained variant of [`@a2anet/openclaw-a2a-plugin`](https://github.com/a2anet/openclaw-a2a-plugin). It adds RODiT / Passport JWT authentication for A2A peers. See [`a2afork.md`](a2afork.md) and [`UPSTREAM.md`](UPSTREAM.md).
+> **IdentyClaw component service:** OpenClaw plugin for [A2A](https://a2a-project.org/) peer messaging with **RODiT / Passport JWT** authentication. JWT login and validation follow the same contract as [`idclawserver-idc`](https://github.com/discernible-io/idclawserver-idc) (via [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be) — not vendored). Forked from [`@a2anet/openclaw-a2a-plugin`](https://github.com/a2anet/openclaw-a2a-plugin). See [`a2afork.md`](a2afork.md) and [`UPSTREAM.md`](UPSTREAM.md).
 
-![OpenClaw A2A Plugin](images/openclaw-a2a-plugin-banner.png)
+![IdentyClaw A2A Gateway Component](images/identyclaw-a2a-banner.png)
 
-[![npm version](https://img.shields.io/npm/v/@a2anet/openclaw-a2a-plugin.svg)](https://www.npmjs.com/package/@a2anet/openclaw-a2a-plugin) [![License](https://img.shields.io/github/license/a2anet/openclaw-a2a-plugin)](https://github.com/a2anet/openclaw-a2a-plugin/blob/main/LICENSE) [![A2A Protocol](https://img.shields.io/badge/A2A-Protocol-blue)](https://a2a-protocol.org) [![Discord](https://img.shields.io/discord/1391916121589944320?color=7289da&label=Discord&logo=discord&logoColor=white)](https://discord.gg/674NGXpAjU)
+[![GitHub](https://img.shields.io/github/stars/discernible-io/openclaw-a2a-idc-plugin?style=social)](https://github.com/discernible-io/openclaw-a2a-idc-plugin) [![npm version](https://img.shields.io/npm/v/@identyclaw/openclaw-a2a-plugin.svg?label=npm)](https://www.npmjs.com/package/@identyclaw/openclaw-a2a-plugin) [![License](https://img.shields.io/github/license/discernible-io/openclaw-a2a-idc-plugin)](https://github.com/discernible-io/openclaw-a2a-idc-plugin/blob/main/LICENSE) [![A2A Protocol](https://img.shields.io/badge/A2A-Protocol-0ea5e9)](https://a2a-protocol.org) [![RODiT JWT](https://img.shields.io/badge/auth-RODiT%20JWT-14b8a6)](https://github.com/discernible-io/idclawserver-idc)
 
-[OpenClaw](https://openclaw.ai) [A2A protocol](https://a2a-project.org/) community plugin.
-Send messages and files to other agents over the internet, and/or allow your agent to receive messages and files with Tailscale.
-The plugin is powered by [A2A Utils](https://github.com/a2anet/a2a-utils), a comprehensive set of utility functions for using [A2A servers (remote agents)](https://a2a-protocol.org/latest/topics/key-concepts/#core-actors-in-a2a-interactions), that powers the [A2A MCP Server](https://github.com/a2anet/a2a-mcp).
+<p align="center">
+  <img src="images/identyclaw-a2a-ecosystem.svg" alt="IdentyClaw stack: OpenClaw gateway, this A2A component, and idclawserver-idc JWT contract" width="960"/>
+</p>
 
-The plugin gives your agent 6 tools to send messages and files to other agents without relying on a third-party chat app or email:
+## Role in the IdentyClaw stack
+
+| Layer | Artifact | Responsibility |
+| --- | --- | --- |
+| Identity & HOLA | [`openclaw-identyclaw-plugin`](https://github.com/discernible-io/openclaw-identyclaw-plugin) | API login, DID, HOLA, operator tools |
+| Passport API (reference) | [`idclawserver-idc`](https://github.com/discernible-io/idclawserver-idc) | JWT issuance contract, `POST /api/login`, token metadata (`webhook_url`) |
+| **A2A wire protocol (this repo)** | **`identyclaw-a2a`** | Agent Card discovery, `POST /a2a`, inbound JWT validation, outbound P2P login, peer tools |
+| Agent runtime | [OpenClaw](https://openclaw.ai) gateway | Chat, hooks, sandbox, tool execution |
+
+Install this plugin when Passport-authenticated agents need to **call or accept A2A peers** — not for IdentyClaw API login or HOLA (use `identyclaw-tools` for that). Outbound A2A uses the same NEAR Passport credential file layout as [`clienttest-idc`](https://github.com/discernible-io/clienttest-idc).
+
+Outbound and inbound agents exchange messages and files over the [A2A protocol](https://a2a-project.org/). [A2A Utils](https://github.com/a2anet/a2a-utils) powers the tool layer. Tailscale or a reverse proxy remains the operator's choice for exposing the gateway.
+
+Your agent gets 6 outbound tools for peer messaging without a third-party chat app or email:
 
 - `a2a_get_agents` to list the agents it's connected to
 - `a2a_get_agent` to view an agent's skills in detail
@@ -19,14 +32,13 @@ The plugin gives your agent 6 tools to send messages and files to other agents w
 - `a2a_view_text_artifact` to view large text responses that have been minimised
 - `a2a_view_data_artifact` to view large data responses that have been minimised
 
-The plugin also allows your agent to receive messages and files with Tailscale and other reverse proxies (nginx, Caddy, etc).
-It's secure by default, requiring you to generate an API key (`openclaw a2a generate-key <label>`) for each agent you want to give access to.
-Your agent will see the sender (`<label>`), and each inbound message creates a separate conversation that is identified by the sender (`<label>`) and `context_id`.
-This way, your agent can support multiple conversations simulateneously, including from the same sender.
+The plugin also allows your agent to receive messages and files via Tailscale or reverse proxies (nginx, Caddy, etc.).
+With RODiT inbound auth, peers authenticate with Passport JWTs (same contract as `idclawserver-idc`). Legacy API-key auth remains available for dev — see [IdentyClaw usage](#-identyclaw-usage-rodit-peers).
+Each inbound message creates a separate conversation identified by the sender label and `context_id`, so your agent can run multiple peer threads at once.
 
-## 📺 Demo
+## 📺 Reference demo (upstream)
 
-Watch [OpenClaw A2A Plugin Demo - Connect your OpenClaw to other OpenClaws (and agents) over the internet](https://youtu.be/bodb7ATn5nc?si=9uVltb4K6-4Z8hPE) on YouTube.
+The upstream project published a generic OpenClaw A2A walkthrough (API-key auth): [OpenClaw A2A Plugin Demo](https://youtu.be/bodb7ATn5nc?si=9uVltb4K6-4Z8hPE). IdentyClaw deployments use RODiT JWT peers instead of static API keys — see [IdentyClaw usage](#-identyclaw-usage-rodit-peers) below.
 
 ## 📦 Installation
 
@@ -52,22 +64,22 @@ openclaw gateway restart
 
 Follow the set up instructions in "🔐 IdentyClaw usage (RODiT peers)", "📤 Sending Messages (outbound)", and/or "📥 Receiving Messages (inbound)".
 
-### Complementary IdentyClaw artifacts
+### Related IdentyClaw artifacts
 
-This plugin handles **A2A wire protocol** (peer messaging). Install it alongside the other IdentyClaw OpenClaw integrations:
-
-| Artifact | Install | Role |
+| Artifact | Install / link | Role |
 | --- | --- | --- |
-| **This plugin** (`identyclaw-a2a`) | `openclaw plugins install clawhub:@identyclaw/openclaw-a2a-plugin` | A2A send/receive, RODiT JWT on `POST /a2a` |
-| IdentyClaw tools (`identyclaw-tools`) | `openclaw plugins install clawhub:@identyclaw/openclaw-identyclaw-plugin` | API login, HOLA, identity, DID — [`openclaw-identyclaw-plugin`](https://github.com/discernible-io/openclaw-identyclaw-plugin) |
+| **This plugin** (`identyclaw-a2a`) | `openclaw plugins install clawhub:@identyclaw/openclaw-a2a-plugin` | A2A send/receive, RODiT JWT on `POST /a2a`, peer `/api/login` routes |
+| Passport server (reference) | [`idclawserver-idc`](https://github.com/discernible-io/idclawserver-idc) | Canonical JWT and metadata contract this plugin implements at the gateway edge |
+| IdentyClaw tools | `openclaw plugins install clawhub:@identyclaw/openclaw-identyclaw-plugin` | API login, HOLA, identity, DID — [`openclaw-identyclaw-plugin`](https://github.com/discernible-io/openclaw-identyclaw-plugin) |
+| Outbound client (reference) | [`clienttest-idc`](https://github.com/discernible-io/clienttest-idc) | Credential file layout and `login_server` caller patterns |
 | Skill (workflows) | `openclaw skills install clawhub:identyclaw` | Operator playbooks and reference docs |
 | MCP (canonical docs) | `https://api.identyclaw.com/mcp` | Live IdentyClaw API documentation |
 
-Both plugins share `IDENTYCLAW_ACCOUNT_ID`, `IDENTYCLAW_NEAR_PRIVATE_KEY`, and `IDENTYCLAW_BASE_URL`. HOLA stays application-layer via `identyclaw_*` tools; A2A peer calls use Passport JWTs automatically.
+`identyclaw-tools` and this plugin can share `IDENTYCLAW_ACCOUNT_ID`, `IDENTYCLAW_NEAR_PRIVATE_KEY`, and `IDENTYCLAW_BASE_URL`. HOLA stays application-layer via `identyclaw_*` tools; A2A peer calls use Passport JWTs automatically through this component.
 
 ## 🔐 IdentyClaw usage (RODiT peers)
 
-This fork authenticates A2A peers with **peer-to-peer RODiT / Passport JWTs** via [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be), instead of pre-shared A2A API keys. Outbound callers sign with their NEAR Passport and obtain a **per-peer** JWT from each receiver's `/api/login`. Inbound agents validate peer-issued JWTs scoped to their own passport `owner_id`.
+This component implements the same peer JWT model as [`idclawserver-idc`](https://github.com/discernible-io/idclawserver-idc): inbound agents validate Passport JWTs on `POST /a2a` and expose `/api/login*` for peer outbound login; outbound agents call each peer's login endpoint via [`@rodit/rodit-auth-be`](https://www.npmjs.com/package/@rodit/rodit-auth-be) instead of pre-shared A2A API keys.
 
 Legacy **API key** auth remains available for development or non-RODiT peers (`inbound.auth.provider: "apiKey"`, or `allowApiKeyFallback: true` with RODiT).
 
@@ -250,12 +262,12 @@ Full rollout plan and staging test tiers: [`a2afork.md`](a2afork.md).
 
 ## 💡 Use Cases
 
-- Connect your OpenClaw to a company-wide OpenClaw to ask questions, give updates, and access company accounts and services
-- Connect your OpenClaw to agents on A2A marketplaces to ehance OpenClaw's capabilities
-- Connect a sandboxed local OpenClaw to a full access cloud OpenClaw to efficiently share context and files
-- Connect your OpenClaw to a hackathon teammate's to sync code plans when vibe coding at the same time to avoid merge conflicts
-- Connect your OpenClaw to a classmate's or co-worker's to work together on a project
-- Connect your OpenClaw to a friend's to plan a fun day out based on what it knows about you
+- Connect IdentyClaw-managed OpenClaw agents across hosts using Passport `token_id` discovery and P2P JWT login
+- Expose an agent's skills on the public A2A wire while keeping authentication aligned with `idclawserver-idc`
+- Message peer agents by Passport identity without exchanging static API keys
+- Bridge a sandboxed local agent to a production IdentyClaw agent over HTTPS with RODiT-scoped JWTs
+- Continue multi-turn A2A tasks with file attachments between operator-run Passport peers
+- Fall back to upstream API-key auth for local dev or non-RODiT peers
 
 ## ✨ Features
 
@@ -783,9 +795,10 @@ openclaw gateway restart
 
 Apache-2.0
 
-## 🤝 Join the A2A Net Community
+## 🔗 IdentyClaw & upstream links
 
-A2A Net is a site to find and share AI agents and open-source community. Join to share your A2A agents, ask questions, stay up-to-date with the latest A2A news, be the first to hear about open-source releases, tutorials, and more!
-
-- 🌍 Site: [A2A Net](https://a2anet.com)
-- 🤖 Discord: [Join the Discord](https://discord.gg/674NGXpAjU)
+- **This repo:** [discernible-io/openclaw-a2a-idc-plugin](https://github.com/discernible-io/openclaw-a2a-idc-plugin)
+- **Passport server reference:** [discernible-io/idclawserver-idc](https://github.com/discernible-io/idclawserver-idc) — JWT contract, token metadata, OpenClaw integration guide
+- **Upstream A2A plugin:** [a2anet/openclaw-a2a-plugin](https://github.com/a2anet/openclaw-a2a-plugin) — API-key auth baseline we forked
+- **A2A protocol:** [a2a-protocol.org](https://a2a-protocol.org)
+- **A2A Net community:** [a2anet.com](https://a2anet.com) · [Discord](https://discord.gg/674NGXpAjU)
