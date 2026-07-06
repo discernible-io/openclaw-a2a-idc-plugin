@@ -12,7 +12,12 @@ import type {
     TaskStatusUpdateEvent,
     TextPart,
 } from "@a2a-js/sdk";
-import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
+import type {
+    AgentExecutor,
+    ExecutionEventBus,
+    RequestContext,
+    TaskStore,
+} from "@a2a-js/sdk/server";
 import { type FileStore, LocalFileStore } from "@a2anet/a2a-utils";
 import type { OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk";
 import { dispatchInboundReplyWithBase } from "openclaw/plugin-sdk/inbound-reply-dispatch";
@@ -41,6 +46,7 @@ export type OpenClawExecutorParams = {
     runtime: PluginRuntime;
     config: OpenClawConfig;
     fileStore?: FileStore | null;
+    taskStore?: TaskStore;
     workspaceDir: string;
 };
 
@@ -53,6 +59,7 @@ export class OpenClawExecutor implements AgentExecutor {
     private runtime: PluginRuntime;
     private config: OpenClawConfig;
     private fileStore: FileStore | null;
+    private taskStore?: TaskStore;
 
     private static isAbortLikeError(err: unknown): boolean {
         if (!(err instanceof Error)) {
@@ -108,6 +115,7 @@ export class OpenClawExecutor implements AgentExecutor {
                 ? null
                 : (params.fileStore ??
                   new LocalFileStore(path.join(params.workspaceDir, "a2a", "inbound", "files")));
+        this.taskStore = params.taskStore;
     }
 
     private publishFinalStatusUpdate(params: {
@@ -191,6 +199,9 @@ export class OpenClawExecutor implements AgentExecutor {
                 },
                 history: [userMessage],
             } satisfies Task;
+            if (this.taskStore) {
+                await this.taskStore.save(initialTask);
+            }
             eventBus.publish(initialTask);
 
             let gatewayText = textSegments.join("\n");

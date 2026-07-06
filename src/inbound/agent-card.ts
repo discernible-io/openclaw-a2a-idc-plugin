@@ -8,6 +8,9 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type { A2AAgentCardConfig, A2ASkillConfig } from "../config.js";
 import { DEFAULT_INBOUND_AGENT_ID, SINGLE_AGENT_RPC_PATH } from "./paths.js";
 
+/** Advertised when inbound `agentCard.skills` is unset — A2A v0.3 requires non-empty `skills[]`. */
+export const DEFAULT_AGENT_SKILL_ID = "general";
+
 export type BuildAgentCardParams = {
     openclawConfig: OpenClawConfig;
     publicUrl: string;
@@ -52,7 +55,7 @@ export class AgentCardBuilder {
             },
             defaultInputModes: ["text"],
             defaultOutputModes: ["text"],
-            skills: this.buildSkills(),
+            skills: this.buildSkills(name, description),
         };
 
         if (this.params.authRequired) {
@@ -97,9 +100,18 @@ export class AgentCardBuilder {
               : undefined;
     }
 
-    private buildSkills(): AgentSkill[] {
+    private buildSkills(name: string, description: string): AgentSkill[] {
         if (!this.agentCardConfig?.skills || this.agentCardConfig.skills.length === 0) {
-            return [];
+            return [
+                {
+                    id: DEFAULT_AGENT_SKILL_ID,
+                    name,
+                    description,
+                    tags: [],
+                    inputModes: ["text"],
+                    outputModes: ["text"],
+                },
+            ];
         }
         return this.agentCardConfig.skills.map((skill: A2ASkillConfig) => ({
             id: skill.id,

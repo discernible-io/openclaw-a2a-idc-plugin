@@ -42,6 +42,7 @@ import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/pub
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
 import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
 import { createOutboundTools } from "./outbound/tools.js";
+import { OpenClawA2ARequestHandler } from "./inbound/request-handler.js";
 import { createUpdateAgentCardTool } from "./tools/update-agent-card.js";
 import {
     assertUniqueA2AInboundKeyLabels,
@@ -594,10 +595,13 @@ const a2aPlugin = definePluginEntry({
                         runtime: api.runtime,
                         config: api.config,
                         fileStore,
+                        taskStore,
                         workspaceDir,
                     });
 
-                    const requestHandler = new DefaultRequestHandler(card, taskStore, executor);
+                    const requestHandler = new OpenClawA2ARequestHandler(
+                        new DefaultRequestHandler(card, taskStore, executor),
+                    );
                     runtime.httpHandlers = new A2AHttpHandlers({
                         agentCard: card,
                         getAgentCard: (req) =>

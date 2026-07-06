@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.4.4 — 2026-07-06
+
+- Emit a default `skills[]` entry (`id` + `name`) on Agent Card discovery when inbound `agentCard.skills` is unset, per A2A v0.3.
+- Persist the inbound user message to task storage as soon as `message/send` execution starts so `tasks/get` can return sent text in `history`.
+- Return full task history from `tasks/get` when `historyLength` is omitted (work around `@a2a-js/sdk` stripping history).
+
 ## 0.4.3 — 2026-07-03
 
 - Bump `@rodit/rodit-auth-be` to `9.12.0`.

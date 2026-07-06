@@ -101,6 +101,35 @@ function makeRuntime(options?: {
 }
 
 describe("OpenClawExecutor", () => {
+    test("persists the initial task with user message when taskStore is configured", async () => {
+        const savedTasks: unknown[] = [];
+        const runtime = makeRuntime();
+        const executor = new OpenClawExecutor({
+            agentId: "main",
+            runtime: runtime.runtime as never,
+            config: {} as never,
+            workspaceDir: "/workspace",
+            taskStore: {
+                save: mock(async (task: unknown) => {
+                    savedTasks.push(task);
+                }),
+                load: mock(async () => undefined),
+            },
+        });
+        const eventBus = makeEventBus();
+
+        await executor.execute(makeContext(), eventBus);
+
+        expect(savedTasks).toHaveLength(1);
+        const saved = savedTasks[0] as {
+            id: string;
+            history: Array<{ parts: Array<{ text: string }> }>;
+        };
+        expect(saved.id).toBe("task-1");
+        expect(saved.history[0]?.parts[0]?.text).toBe("Hello");
+        expect(eventBus.events[0]).toEqual(saved);
+    });
+
     test("publishes artifact and completed status on success", async () => {
         const runtime = makeRuntime();
         const executor = new OpenClawExecutor({

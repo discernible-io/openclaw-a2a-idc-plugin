@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, test } from "bun:test";
-import { AgentCardBuilder } from "../../src/inbound/agent-card.js";
+import { AgentCardBuilder, DEFAULT_AGENT_SKILL_ID } from "../../src/inbound/agent-card.js";
 
 describe("AgentCardBuilder", () => {
     const baseParams = {
@@ -110,9 +110,12 @@ describe("AgentCardBuilder", () => {
         expect(card.skills[0].id).toBe("chat");
     });
 
-    test("returns empty skills when none configured", () => {
+    test("returns a default skill when none configured", () => {
         const card = new AgentCardBuilder(baseParams).build();
-        expect(card.skills).toEqual([]);
+        expect(card.skills).toHaveLength(1);
+        expect(card.skills[0].id).toBe(DEFAULT_AGENT_SKILL_ID);
+        expect(card.skills[0].name).toBe("OpenClaw Agent (main)");
+        expect(card.skills[0].description).toBe("AI assistant powered by OpenClaw");
     });
 
     test("uses agentCard description", () => {

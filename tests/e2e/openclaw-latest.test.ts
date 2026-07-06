@@ -52,6 +52,10 @@ describeE2E("openclaw@latest + plugin — single-agent inbound (unauthenticated)
         expect(typeof card.version).toBe("string");
         expect(card.capabilities).toBeDefined();
         expect(Array.isArray(card.skills)).toBe(true);
+        expect((card.skills as unknown[]).length).toBeGreaterThan(0);
+        const firstSkill = (card.skills as Array<Record<string, unknown>>)[0];
+        expect(typeof firstSkill?.id).toBe("string");
+        expect(typeof firstSkill?.name).toBe("string");
     });
 
     // The contract we want clients to be able to rely on: discover the agent
