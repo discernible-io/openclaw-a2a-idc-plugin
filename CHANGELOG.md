@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.4.5 — 2026-07-09
+
+- Support richer inbound Agent Cards: configurable `version`, `defaultInputModes`, `defaultOutputModes`, and `extensions.identyclaw` (registry, passport, verify URLs, channels, contact URIs).
+- Default card MIME modes are now `text/plain`; per-skill `inputModes` / `outputModes` are emitted only when set in config.
+- Extend `a2a_update_agent_card` to persist the new card fields at runtime.
+
 ## 0.4.4 — 2026-07-06
 
 - Emit a default `skills[]` entry (`id` + `name`) on Agent Card discovery when inbound `agentCard.skills` is unset, per A2A v0.3.

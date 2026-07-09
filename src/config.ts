@@ -63,10 +63,31 @@ export type A2AInboundAuthConfig = {
     logLevel?: string;
 };
 
+/** IdentyClaw-specific Agent Card extension (`extensions.identyclaw`). */
+export type A2AIdentyclawExtensionConfig = {
+    registryId?: string;
+    registryUrl?: string;
+    passportTokenId?: string;
+    did?: string;
+    verifyUrl?: string;
+    verifyRpcDocs?: string;
+    channels?: string[];
+    contactUris?: string[];
+};
+
+export type A2AAgentCardExtensionsConfig = {
+    identyclaw?: A2AIdentyclawExtensionConfig;
+};
+
 export type A2AAgentCardConfig = {
     name?: string;
     description?: string;
+    /** Agent implementation version advertised on the card (default `1.0.0`). */
+    version?: string;
+    defaultInputModes?: string[];
+    defaultOutputModes?: string[];
     skills?: A2ASkillConfig[];
+    extensions?: A2AAgentCardExtensionsConfig;
 };
 
 export type A2AInboundAgentConfig = {
@@ -288,6 +309,72 @@ function parseApiKeys(value: unknown, warnings?: ConfigParseWarnings): A2AInboun
     return keys.length > 0 ? keys : undefined;
 }
 
+function parseIdentyclawExtension(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+    path = "agentCard.extensions.identyclaw",
+): A2AIdentyclawExtensionConfig | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const raw = value as Record<string, unknown>;
+    const registryId =
+        typeof raw.registryId === "string" ? raw.registryId.trim() || undefined : undefined;
+    const registryUrl =
+        typeof raw.registryUrl === "string" ? raw.registryUrl.trim() || undefined : undefined;
+    const passportTokenId =
+        typeof raw.passportTokenId === "string"
+            ? raw.passportTokenId.trim() || undefined
+            : undefined;
+    const did = typeof raw.did === "string" ? raw.did.trim() || undefined : undefined;
+    const verifyUrl =
+        typeof raw.verifyUrl === "string" ? raw.verifyUrl.trim() || undefined : undefined;
+    const verifyRpcDocs =
+        typeof raw.verifyRpcDocs === "string" ? raw.verifyRpcDocs.trim() || undefined : undefined;
+    const channels = parseStringArray(raw.channels);
+    const contactUris = parseStringArray(raw.contactUris);
+
+    if (
+        registryId === undefined &&
+        registryUrl === undefined &&
+        passportTokenId === undefined &&
+        did === undefined &&
+        verifyUrl === undefined &&
+        verifyRpcDocs === undefined &&
+        channels === undefined &&
+        contactUris === undefined
+    ) {
+        return undefined;
+    }
+
+    return {
+        ...(registryId ? { registryId } : {}),
+        ...(registryUrl ? { registryUrl } : {}),
+        ...(passportTokenId ? { passportTokenId } : {}),
+        ...(did ? { did } : {}),
+        ...(verifyUrl ? { verifyUrl } : {}),
+        ...(verifyRpcDocs ? { verifyRpcDocs } : {}),
+        ...(channels ? { channels } : {}),
+        ...(contactUris ? { contactUris } : {}),
+    };
+}
+
+function parseAgentCardExtensions(
+    value: unknown,
+    warnings?: ConfigParseWarnings,
+    path = "agentCard.extensions",
+): A2AAgentCardExtensionsConfig | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const raw = value as Record<string, unknown>;
+    const identyclaw = parseIdentyclawExtension(raw.identyclaw, warnings, `${path}.identyclaw`);
+    if (!identyclaw) {
+        return undefined;
+    }
+    return { identyclaw };
+}
+
 function parseAgentCard(
     value: unknown,
     warnings?: ConfigParseWarnings,
@@ -300,20 +387,39 @@ function parseAgentCard(
     const name = typeof raw.name === "string" ? raw.name.trim() || undefined : undefined;
     const description =
         typeof raw.description === "string" ? raw.description.trim() || undefined : undefined;
+    const version = typeof raw.version === "string" ? raw.version.trim() || undefined : undefined;
     if (typeof raw.name === "string" && raw.name.trim().length === 0) {
         pushConfigWarning(warnings, `${path}.name: empty string ignored`);
     }
     if (typeof raw.description === "string" && raw.description.trim().length === 0) {
         pushConfigWarning(warnings, `${path}.description: empty string ignored`);
     }
+    if (typeof raw.version === "string" && raw.version.trim().length === 0) {
+        pushConfigWarning(warnings, `${path}.version: empty string ignored`);
+    }
+    const defaultInputModes = parseStringArray(raw.defaultInputModes);
+    const defaultOutputModes = parseStringArray(raw.defaultOutputModes);
     const skills = parseSkills(raw.skills, warnings, `${path}.skills`);
-    if (name === undefined && description === undefined && skills === undefined) {
+    const extensions = parseAgentCardExtensions(raw.extensions, warnings, `${path}.extensions`);
+    if (
+        name === undefined &&
+        description === undefined &&
+        version === undefined &&
+        defaultInputModes === undefined &&
+        defaultOutputModes === undefined &&
+        skills === undefined &&
+        extensions === undefined
+    ) {
         return undefined;
     }
     return {
         ...(name ? { name } : {}),
         ...(description ? { description } : {}),
+        ...(version ? { version } : {}),
+        ...(defaultInputModes ? { defaultInputModes } : {}),
+        ...(defaultOutputModes ? { defaultOutputModes } : {}),
         ...(skills ? { skills } : {}),
+        ...(extensions ? { extensions } : {}),
     };
 }
 
@@ -380,7 +486,10 @@ function parseOutboundAuth(
             `outbound.auth.mode "${modeRaw}" was removed; only P2P RODiT peer login is supported`,
         );
     } else if (modeRaw) {
-        pushConfigWarning(warnings, `outbound.auth.mode "${modeRaw}" is not recognized and was ignored`);
+        pushConfigWarning(
+            warnings,
+            `outbound.auth.mode "${modeRaw}" is not recognized and was ignored`,
+        );
     }
     if (raw.credentialsEnv !== undefined) {
         pushConfigWarning(
@@ -485,7 +594,12 @@ function parseInboundRoditLogin(value: unknown): A2AInboundRoditLoginConfig | un
             ? loginModeRaw
             : undefined;
 
-    if (enabled === undefined && loginPath === undefined && timestampPath === undefined && !loginMode) {
+    if (
+        enabled === undefined &&
+        loginPath === undefined &&
+        timestampPath === undefined &&
+        !loginMode
+    ) {
         return undefined;
     }
 
@@ -522,11 +636,13 @@ function parseInboundAuth(
             `inbound.auth.mode "${modeRaw}" was removed; only P2P-issued peer JWTs are accepted`,
         );
     } else if (modeRaw) {
-        pushConfigWarning(warnings, `inbound.auth.mode "${modeRaw}" is not recognized and was ignored`);
+        pushConfigWarning(
+            warnings,
+            `inbound.auth.mode "${modeRaw}" is not recognized and was ignored`,
+        );
     }
     const issuer = typeof raw.issuer === "string" ? raw.issuer.trim() || undefined : undefined;
-    let audience =
-        typeof raw.audience === "string" ? raw.audience.trim() || undefined : undefined;
+    let audience = typeof raw.audience === "string" ? raw.audience.trim() || undefined : undefined;
     const p2pAudience =
         typeof raw.p2pAudience === "string" ? raw.p2pAudience.trim() || undefined : undefined;
     if (p2pAudience) {
@@ -662,6 +778,29 @@ export function extractA2AEntry(rootConfig: Record<string, unknown>): {
     return { pluginsEntries, a2aEntry, a2aConfig };
 }
 
+function mergeAgentCardConfig(
+    existing: Record<string, unknown>,
+    update: Record<string, unknown>,
+): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...existing, ...update };
+    const existingExtensions = existing.extensions as Record<string, unknown> | undefined;
+    const nextExtensions = update.extensions as Record<string, unknown> | undefined;
+    if (existingExtensions && nextExtensions) {
+        const existingIdentyclaw = existingExtensions.identyclaw as
+            | Record<string, unknown>
+            | undefined;
+        const nextIdentyclaw = nextExtensions.identyclaw as Record<string, unknown> | undefined;
+        merged.extensions = {
+            ...existingExtensions,
+            ...nextExtensions,
+            ...(existingIdentyclaw && nextIdentyclaw
+                ? { identyclaw: { ...existingIdentyclaw, ...nextIdentyclaw } }
+                : {}),
+        };
+    }
+    return merged;
+}
+
 /** Merge a per-agent card update into the existing `inbound.agents` map. */
 function mergeInboundAgents(
     existing: Record<string, unknown>,
@@ -676,10 +815,10 @@ function mergeInboundAgents(
             ...nextEntry,
             ...(existingEntry.agentCard && nextEntry.agentCard
                 ? {
-                      agentCard: {
-                          ...(existingEntry.agentCard as Record<string, unknown>),
-                          ...(nextEntry.agentCard as Record<string, unknown>),
-                      },
+                      agentCard: mergeAgentCardConfig(
+                          existingEntry.agentCard as Record<string, unknown>,
+                          nextEntry.agentCard as Record<string, unknown>,
+                      ),
                   }
                 : {}),
         };
@@ -714,10 +853,10 @@ export function buildRootConfigWithA2A(
         if (existingInbound.agentCard && nextInbound.agentCard) {
             mergedInbound = {
                 ...mergedInbound,
-                agentCard: {
-                    ...(existingInbound.agentCard as Record<string, unknown>),
-                    ...(nextInbound.agentCard as Record<string, unknown>),
-                },
+                agentCard: mergeAgentCardConfig(
+                    existingInbound.agentCard as Record<string, unknown>,
+                    nextInbound.agentCard as Record<string, unknown>,
+                ),
             };
         }
 

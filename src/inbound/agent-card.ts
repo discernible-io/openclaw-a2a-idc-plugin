@@ -11,6 +11,11 @@ import { DEFAULT_INBOUND_AGENT_ID, SINGLE_AGENT_RPC_PATH } from "./paths.js";
 /** Advertised when inbound `agentCard.skills` is unset — A2A v0.3 requires non-empty `skills[]`. */
 export const DEFAULT_AGENT_SKILL_ID = "general";
 
+export const DEFAULT_AGENT_CARD_VERSION = "1.0.0";
+export const DEFAULT_AGENT_CARD_PROTOCOL_VERSION = "0.3.0";
+export const DEFAULT_AGENT_CARD_INPUT_MODES = ["text/plain"];
+export const DEFAULT_AGENT_CARD_OUTPUT_MODES = ["text/plain"];
+
 export type BuildAgentCardParams = {
     openclawConfig: OpenClawConfig;
     publicUrl: string;
@@ -42,21 +47,32 @@ export class AgentCardBuilder {
             `OpenClaw Agent (${this.agentId})`;
         const description = this.agentCardConfig?.description ?? "AI assistant powered by OpenClaw";
         const baseUrl = this.params.publicUrl.replace(/\/$/, "");
+        const defaultInputModes =
+            this.agentCardConfig?.defaultInputModes ?? DEFAULT_AGENT_CARD_INPUT_MODES;
+        const defaultOutputModes =
+            this.agentCardConfig?.defaultOutputModes ?? DEFAULT_AGENT_CARD_OUTPUT_MODES;
 
         const card: AgentCard = {
             name,
             description,
-            protocolVersion: "0.3.0",
-            version: "1.0.0",
+            protocolVersion: DEFAULT_AGENT_CARD_PROTOCOL_VERSION,
+            version: this.agentCardConfig?.version ?? DEFAULT_AGENT_CARD_VERSION,
             url: `${baseUrl}${this.rpcPath}`,
             capabilities: {
                 streaming: true,
                 pushNotifications: false,
             },
-            defaultInputModes: ["text"],
-            defaultOutputModes: ["text"],
-            skills: this.buildSkills(name, description),
+            defaultInputModes,
+            defaultOutputModes,
+            skills: this.buildSkills(name, description, defaultInputModes, defaultOutputModes),
         };
+
+        const identyclawExtension = this.agentCardConfig?.extensions?.identyclaw;
+        if (identyclawExtension) {
+            Object.assign(card, {
+                extensions: { identyclaw: { ...identyclawExtension } },
+            });
+        }
 
         if (this.params.authRequired) {
             if (this.params.authScheme === "jwt") {
@@ -100,7 +116,12 @@ export class AgentCardBuilder {
               : undefined;
     }
 
-    private buildSkills(name: string, description: string): AgentSkill[] {
+    private buildSkills(
+        name: string,
+        description: string,
+        defaultInputModes: string[],
+        defaultOutputModes: string[],
+    ): AgentSkill[] {
         if (!this.agentCardConfig?.skills || this.agentCardConfig.skills.length === 0) {
             return [
                 {
@@ -108,8 +129,8 @@ export class AgentCardBuilder {
                     name,
                     description,
                     tags: [],
-                    inputModes: ["text"],
-                    outputModes: ["text"],
+                    inputModes: defaultInputModes,
+                    outputModes: defaultOutputModes,
                 },
             ];
         }
@@ -119,8 +140,8 @@ export class AgentCardBuilder {
             description: skill.description,
             tags: skill.tags ?? [],
             ...(skill.examples ? { examples: skill.examples } : {}),
-            inputModes: skill.inputModes ?? ["text"],
-            outputModes: skill.outputModes ?? ["text"],
+            ...(skill.inputModes ? { inputModes: skill.inputModes } : {}),
+            ...(skill.outputModes ? { outputModes: skill.outputModes } : {}),
         }));
     }
 }

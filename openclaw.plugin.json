@@ -2,7 +2,7 @@
     "id": "identyclaw-a2a",
     "name": "OpenClaw A2A Plugin",
     "description": "A2A peer messaging with RODiT / Passport JWT authentication",
-    "version": "0.4.4",
+    "version": "0.4.5",
     "activation": {
         "onStartup": true
     },
@@ -105,6 +105,9 @@
                 "properties": {
                     "name": { "type": "string" },
                     "description": { "type": "string" },
+                    "version": { "type": "string" },
+                    "defaultInputModes": { "type": "array", "items": { "type": "string" } },
+                    "defaultOutputModes": { "type": "array", "items": { "type": "string" } },
                     "skills": {
                         "type": "array",
                         "items": {
@@ -119,6 +122,29 @@
                                 "examples": { "type": "array", "items": { "type": "string" } },
                                 "inputModes": { "type": "array", "items": { "type": "string" } },
                                 "outputModes": { "type": "array", "items": { "type": "string" } }
+                            }
+                        }
+                    },
+                    "extensions": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "identyclaw": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "registryId": { "type": "string" },
+                                    "registryUrl": { "type": "string" },
+                                    "passportTokenId": { "type": "string" },
+                                    "did": { "type": "string" },
+                                    "verifyUrl": { "type": "string" },
+                                    "verifyRpcDocs": { "type": "string" },
+                                    "channels": { "type": "array", "items": { "type": "string" } },
+                                    "contactUris": {
+                                        "type": "array",
+                                        "items": { "type": "string" }
+                                    }
+                                }
                             }
                         }
                     }

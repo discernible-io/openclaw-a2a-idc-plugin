@@ -107,6 +107,23 @@ describe("createUpdateAgentCardTool", () => {
         expect(deps.updateLiveCard).not.toHaveBeenCalled();
     });
 
+    test("updates extensions successfully", async () => {
+        const deps = makeDeps();
+        const tool = createUpdateAgentCardTool(deps);
+        const result = await tool.execute("call-1", {
+            extensions: {
+                identyclaw: {
+                    registryId: "com.identyclaw.lemuel_gulliver",
+                    channels: ["a2a"],
+                },
+            },
+        });
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.updated).toContain("extensions: updated");
+        const call = (deps.updateLiveCard as ReturnType<typeof mock>).mock.calls[0];
+        expect(call[0].extensions?.identyclaw?.registryId).toBe("com.identyclaw.lemuel_gulliver");
+    });
+
     test("handles empty string name as no update", async () => {
         const tool = createUpdateAgentCardTool(makeDeps());
         const result = await tool.execute("call-1", { name: "   " });

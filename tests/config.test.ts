@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, test } from "bun:test";
-import { buildRootConfigWithA2A, PLUGIN_ID, parseA2APluginConfig } from "../src/config.js";
+import { PLUGIN_ID, buildRootConfigWithA2A, parseA2APluginConfig } from "../src/config.js";
 import {
     assertUniqueA2AInboundKeyLabels,
     assertValidA2AInboundKeyLabel,
@@ -62,9 +62,7 @@ describe("parseA2APluginConfig", () => {
         expect(
             parseA2APluginConfig({ outbound: { tlsSkipVerify: true } }).outbound?.tlsSkipVerify,
         ).toBe(true);
-        expect(parseA2APluginConfig({ outbound: { tlsSkipVerify: false } }).outbound).toEqual(
-            {},
-        );
+        expect(parseA2APluginConfig({ outbound: { tlsSkipVerify: false } }).outbound).toEqual({});
     });
 
     test("collects warnings for silently dropped config entries", () => {
@@ -212,6 +210,39 @@ describe("parseA2APluginConfig", () => {
         expect(result.inbound?.agentCard?.skills).toEqual([
             { id: "valid", name: "Valid", description: "OK" },
         ]);
+    });
+
+    test("parses inbound agent card extensions and default modes", () => {
+        const result = parseA2APluginConfig({
+            inbound: {
+                agentCard: {
+                    version: "1.0.0",
+                    defaultInputModes: ["text/plain"],
+                    defaultOutputModes: ["text/plain"],
+                    extensions: {
+                        identyclaw: {
+                            registryId: "com.identyclaw.lemuel_gulliver",
+                            passportTokenId: "Abcd1234efgh",
+                            channels: ["a2a", "email"],
+                            contactUris: ["email:identyclaw.com:concierge@identyclaw.com"],
+                        },
+                    },
+                },
+            },
+        });
+        expect(result.inbound?.agentCard).toEqual({
+            version: "1.0.0",
+            defaultInputModes: ["text/plain"],
+            defaultOutputModes: ["text/plain"],
+            extensions: {
+                identyclaw: {
+                    registryId: "com.identyclaw.lemuel_gulliver",
+                    passportTokenId: "Abcd1234efgh",
+                    channels: ["a2a", "email"],
+                    contactUris: ["email:identyclaw.com:concierge@identyclaw.com"],
+                },
+            },
+        });
     });
 
     test("parses inbound agents with per-agent cards", () => {
@@ -487,6 +518,54 @@ describe("buildRootConfigWithA2A", () => {
         expect(agentCard.name).toBe("Updated");
         expect(agentCard.description).toBe("Existing description");
         expect(agentCard.skills).toEqual([{ id: "chat", name: "Chat", description: "Talk" }]);
+    });
+
+    test("deep merges inbound.agentCard extensions without clobbering sibling fields", () => {
+        const rootConfig = {
+            plugins: {
+                entries: {
+                    [PLUGIN_ID]: {
+                        config: {
+                            inbound: {
+                                agentCard: {
+                                    extensions: {
+                                        identyclaw: {
+                                            registryId: "com.identyclaw.lemuel_gulliver",
+                                            verifyUrl: "https://verify.identyclaw.com",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+        const result = buildRootConfigWithA2A(rootConfig, {
+            inbound: {
+                agentCard: {
+                    extensions: {
+                        identyclaw: {
+                            passportTokenId: "Abcd1234efgh",
+                        },
+                    },
+                },
+            },
+        });
+        const config = (
+            (result.plugins as Record<string, unknown>).entries as Record<string, unknown>
+        )[PLUGIN_ID] as Record<string, Record<string, unknown>>;
+        const agentCard = (config.config.inbound as Record<string, unknown>).agentCard as Record<
+            string,
+            unknown
+        >;
+        const identyclaw = (agentCard.extensions as Record<string, Record<string, unknown>>)
+            .identyclaw;
+        expect(identyclaw).toEqual({
+            registryId: "com.identyclaw.lemuel_gulliver",
+            verifyUrl: "https://verify.identyclaw.com",
+            passportTokenId: "Abcd1234efgh",
+        });
     });
 
     test("parses outbound peer login paths", () => {
