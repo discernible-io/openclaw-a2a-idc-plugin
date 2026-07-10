@@ -31,6 +31,15 @@ export function sanitizeOpenAiToolSchema(schema: Record<string, unknown>): void 
     schema.required = required.filter((key) => !isNullableJsonSchemaProperty(props[key] ?? {}));
 }
 
+/** Outbound tools that target a peer by Passport token_id (or legacy config alias). */
+const PEER_TARGETING_TOOLS = new Set([
+    "get_agent",
+    "send_message",
+    "get_task",
+    "view_text_artifact",
+    "view_data_artifact",
+]);
+
 const SNAKE_TO_CAMEL: Record<string, string> = {
     agent_id: "agentId",
     context_id: "contextId",
@@ -57,6 +66,16 @@ export function normalizeA2AToolParams(
         delete out[snake];
     }
 
+    if (out.agentId === undefined) {
+        if (out.token_id !== undefined) {
+            out.agentId = out.token_id;
+        } else if (out.tokenId !== undefined) {
+            out.agentId = out.tokenId;
+        }
+    }
+    delete out.token_id;
+    delete out.tokenId;
+
     for (const [key, value] of Object.entries(out)) {
         if (value === null) {
             delete out[key];
@@ -73,6 +92,33 @@ export function normalizeA2AToolParams(
     }
 
     return out;
+}
+
+/** Present peer-targeting tools as `token_id` instead of a2a-utils `agentId`. */
+export function preferTokenIdInToolSchema(
+    schema: Record<string, unknown>,
+    toolName: string,
+): void {
+    if (!PEER_TARGETING_TOOLS.has(toolName)) {
+        return;
+    }
+
+    const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+    const agentIdProp = props.agentId;
+    if (!agentIdProp) {
+        return;
+    }
+
+    props.token_id = {
+        ...agentIdProp,
+        description:
+            "Passport token_id from a2a_get_agents. Legacy outbound config aliases without a token_id may also be passed here.",
+    };
+    delete props.agentId;
+
+    if (Array.isArray(schema.required)) {
+        schema.required = schema.required.map((key) => (key === "agentId" ? "token_id" : key));
+    }
 }
 
 /** LLM tools/docs refer to task_id / context_id; a2a-utils returns id / contextId. */

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.6 — 2026-07-10
+
+- Simplify outbound peer identity for LLM tools: Passport peers expose and accept `token_id` only (no redundant `agent_id`); legacy config aliases without a Passport token keep `agent_id`.
+- Rename peer-targeting outbound tool schemas from `agentId` to `token_id`; map `token_id` / `tokenId` inputs to the internal registry key before calling a2a-utils.
+- Enrich `a2a_get_agents` / `a2a_get_agent` responses with explicit peer identifiers so Agent Card `name` is not mistaken for an addressable ID.
+- Resolve unknown Passport `token_id` peers on `a2a_get_agent` (same as the send path).
+
 ## 0.4.5 — 2026-07-09
 
 - Support richer inbound Agent Cards: configurable `version`, `defaultInputModes`, `defaultOutputModes`, and `extensions.identyclaw` (registry, passport, verify URLs, channels, contact URIs).

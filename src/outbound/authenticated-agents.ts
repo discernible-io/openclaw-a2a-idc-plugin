@@ -8,6 +8,7 @@ import type { AgentURLAndCustomHeaders } from "@a2anet/a2a-utils";
 import { isPassportTokenId } from "../auth/passport-token-id.js";
 import type { OutboundAuthProvider } from "../auth/outbound-auth.js";
 import type { A2AAgentEntry } from "../config.js";
+import { enrichAgentSummaryForLlm } from "./agent-identity.js";
 import type { TokenPeerResolver } from "./token-peer-resolver.js";
 
 function stripAuthorizationHeader(headers: Record<string, string>): Record<string, string> {
@@ -113,17 +114,46 @@ export class AuthenticatedA2AAgents {
         return merged;
     }
 
+    private async resolveTokenPeerIfNeeded(agentId: string): Promise<void> {
+        if (this.tokenPeerResolver && isPassportTokenId(agentId)) {
+            await this.tokenPeerResolver.resolveAgentCardUrl(agentId);
+        }
+    }
+
     async getAgentForLlm(
         agentId: string,
         detail?: "name" | "basic" | "skills" | "full",
     ): Promise<Record<string, unknown> | null> {
-        return this.inner.getAgentForLlm(agentId, detail);
+        await this.resolveTokenPeerIfNeeded(agentId);
+        const agent = await this.inner.getAgent(agentId);
+        if (!agent) {
+            return null;
+        }
+        const summary = await this.inner.getAgentForLlm(agentId, detail);
+        if (!summary) {
+            return null;
+        }
+        return enrichAgentSummaryForLlm(agentId, summary, agent.agentCard);
     }
 
     async getAgentsForLlm(
         detail?: "name" | "basic" | "skills" | "full",
     ): Promise<Record<string, Record<string, unknown>>> {
-        return this.inner.getAgentsForLlm(detail);
+        const agents = await this.inner.getAgents();
+        const result: Record<string, Record<string, unknown>> = {};
+        const sortedKeys = Object.keys(agents).sort();
+        for (const agentId of sortedKeys) {
+            const summary = await this.inner.getAgentForLlm(agentId, detail);
+            if (!summary) {
+                continue;
+            }
+            result[agentId] = enrichAgentSummaryForLlm(
+                agentId,
+                summary,
+                agents[agentId].agentCard,
+            );
+        }
+        return result;
     }
 
     async addAgent(

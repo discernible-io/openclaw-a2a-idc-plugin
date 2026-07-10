@@ -22,6 +22,7 @@ import { TokenPeerResolver } from "./token-peer-resolver.js";
 import {
     normalizeA2AToolParams,
     normalizeA2AToolResult,
+    preferTokenIdInToolSchema,
     sanitizeOpenAiToolSchema,
 } from "./tool-params.js";
 import { withOutboundAuthRetry } from "./retry.js";
@@ -106,6 +107,7 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
     const agentTools = (tools.tools as A2AToolDefinition[]).map((def) => {
         const { $schema: _, ...jsonSchema } = zodToJsonSchema(def.schema, { target: "openAi" });
         sanitizeOpenAiToolSchema(jsonSchema);
+        preferTokenIdInToolSchema(jsonSchema, def.name);
         return {
             name: `a2a_${def.name}`,
             label: `a2a_${def.name}`,

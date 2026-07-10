@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import {
     normalizeA2AToolParams,
     normalizeA2AToolResult,
+    preferTokenIdInToolSchema,
     sanitizeOpenAiToolSchema,
 } from "../../src/outbound/tool-params.js";
 
@@ -77,6 +78,57 @@ describe("normalizeA2AToolParams", () => {
             agentId: "agent-b",
             message: "hello",
         });
+    });
+
+    test("maps token_id to agentId for outbound peer tools", () => {
+        expect(
+            normalizeA2AToolParams({
+                token_id: "lncqsncdshcj",
+                message: "hello",
+            }),
+        ).toEqual({
+            agentId: "lncqsncdshcj",
+            message: "hello",
+        });
+    });
+
+    test("prefers explicit agentId over token_id", () => {
+        expect(
+            normalizeA2AToolParams({
+                token_id: "lncqsncdshcj",
+                agentId: "self",
+                message: "hello",
+            }),
+        ).toEqual({
+            agentId: "self",
+            message: "hello",
+        });
+    });
+});
+
+describe("preferTokenIdInToolSchema", () => {
+    test("renames agentId to token_id for peer-targeting tools", () => {
+        const schema: Record<string, unknown> = {
+            properties: {
+                agentId: { type: "string", description: "from get_agents" },
+                message: { type: "string" },
+            },
+            required: ["agentId", "message"],
+        };
+        preferTokenIdInToolSchema(schema, "send_message");
+        const props = schema.properties as Record<string, unknown>;
+        expect(props.agentId).toBeUndefined();
+        expect(props.token_id).toBeDefined();
+        expect(schema.required).toEqual(["token_id", "message"]);
+    });
+
+    test("leaves get_agents schema unchanged", () => {
+        const schema: Record<string, unknown> = {
+            properties: {},
+            required: [],
+        };
+        preferTokenIdInToolSchema(schema, "get_agents");
+        expect(schema.properties).toEqual({});
     });
 });
 

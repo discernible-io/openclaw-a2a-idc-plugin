@@ -152,6 +152,8 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 | `persistResolvedPeers` | `boolean` | `false` | Persist resolved peers to `stateDir/a2a/outbound/peers.json` |
 
 When `resolvePeersByTokenId` is enabled, `a2a_send_message` can target a bare Passport `token_id` not listed in `outbound.agents`. The plugin tries `GET /api/identity/token/{tokenId}/full` (authenticated with your NEAR creds), reads **`metadata.webhook_url`**, and falls back to NEAR chain lookup (`nearorg_rpc_tokenfromroditid`) when the API is unavailable or has no webhook. It then registers `{webhook_url}/.well-known/agent-card.json` before normal P2P login. DN `contactUri` is **not** used for A2A discovery — it is identity contact metadata (often `email:…`). Use `identyclaw_get_agent_identity` when you need DN traits.
+
+**Peer identity:** key `outbound.agents` by Passport `token_id` (recommended). The `a2a_*` tools expose and accept `token_id` for peers; legacy config aliases without a Passport token (e.g. dev self-loop `self`) use `agent_id` instead.
 | `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
 | `agents.*.loginBaseUrl` | `string` | derived from Agent Card URL | Override P2P login target when it differs from the card origin |
 
@@ -382,13 +384,15 @@ List all available remote A2A agents with names and descriptions.
 
 No parameters.
 
+Each Passport peer entry includes `token_id` (pass to other `a2a_*` tools). Legacy config aliases without a Passport token include `agent_id` instead. The Agent Card `name` is display metadata only — never use it as an identifier.
+
 #### `a2a_get_agent`
 
 Get detailed info about a specific agent, including skills.
 
-| Parameter  | Type   | Required | Description                   |
-| ---------- | ------ | -------- | ----------------------------- |
-| `agent_id` | string | Yes      | The agent's unique identifier |
+| Parameter   | Type   | Required | Description                                                              |
+| ----------- | ------ | -------- | ------------------------------------------------------------------------ |
+| `token_id`  | string | Yes      | Passport `token_id` from `a2a_get_agents` (or legacy `agent_id` alias)   |
 
 #### `a2a_send_message`
 
@@ -400,7 +404,7 @@ progress after the timeout, the current task state is returned. Use
 
 | Parameter    | Type   | Required | Description                                                                                                                                                |
 | ------------ | ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_id`   | string | Yes      | ID of the target agent                                                                                                                                     |
+| `token_id`   | string | Yes      | Passport `token_id` from `a2a_get_agents` (or legacy `agent_id` alias)                                                                                     |
 | `message`    | string | Yes      | Message content to send                                                                                                                                    |
 | `context_id` | string | No       | Continue an existing multi-turn conversation                                                                                                               |
 | `task_id`    | string | No       | Attach to an existing task (for `input_required` flows)                                                                                                    |
@@ -414,9 +418,9 @@ Check the progress of an A2A task that is still in progress. Monitors until the
 task reaches a terminal state or the timeout is reached. If still in progress,
 returns the current task state — call again to continue monitoring.
 
-| Parameter       | Type   | Required | Description                                |
-| --------------- | ------ | -------- | ------------------------------------------ |
-| `agent_id`      | string | Yes      | ID of the agent owning the task            |
+| Parameter       | Type   | Required | Description                                                              |
+| ----------------- | ------ | -------- | ------------------------------------------------------------------------ |
+| `token_id`        | string | Yes      | Passport `token_id` from `a2a_get_agents` (or legacy `agent_id` alias)   |
 | `task_id`       | string | Yes      | Task ID from a previous `a2a_send_message` |
 | `timeout`       | number | No       | Monitoring timeout in seconds              |
 | `poll_interval` | number | No       | Interval between status checks in seconds  |
@@ -426,9 +430,9 @@ returns the current task state — call again to continue monitoring.
 View text content from an artifact, optionally selecting a line or character
 range. Can select by line range OR character range, but not both.
 
-| Parameter         | Type   | Required | Description                                   |
-| ----------------- | ------ | -------- | --------------------------------------------- |
-| `agent_id`        | string | Yes      | ID of the agent that produced the artifact    |
+| Parameter         | Type   | Required | Description                                                              |
+| ----------------- | ------ | -------- | ------------------------------------------------------------------------ |
+| `token_id`        | string | Yes      | Passport `token_id` from `a2a_get_agents` (or legacy `agent_id` alias)   |
 | `task_id`         | string | Yes      | Task ID containing the artifact               |
 | `artifact_id`     | string | Yes      | The artifact's unique identifier              |
 | `line_start`      | number | No       | Starting line number (1-based, inclusive)     |
@@ -441,9 +445,9 @@ range. Can select by line range OR character range, but not both.
 View structured data from an artifact with optional JSON path, row, and column
 filtering.
 
-| Parameter     | Type   | Required | Description                                                            |
-| ------------- | ------ | -------- | ---------------------------------------------------------------------- |
-| `agent_id`    | string | Yes      | ID of the agent that produced the artifact                             |
+| Parameter     | Type   | Required | Description                                                              |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------ |
+| `token_id`    | string | Yes      | Passport `token_id` from `a2a_get_agents` (or legacy `agent_id` alias)   |
 | `task_id`     | string | Yes      | Task ID containing the artifact                                        |
 | `artifact_id` | string | Yes      | The artifact's unique identifier                                       |
 | `json_path`   | string | No       | Dot-separated path to navigate data (e.g. `"results.items"`)           |
