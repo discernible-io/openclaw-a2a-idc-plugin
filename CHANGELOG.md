@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-## 0.4.6 — 2026-07-10
+## 0.4.7 — 2026-07-10
+
+- Resolve inbound Agent Card fields dynamically from `RoditClient.getConfigOwnRodit()` and IdentyClaw `GET /api/identity/token/{tokenId}/full` (name, `extensions.identyclaw`, contact URIs).
+- Treat Passport metadata as authoritative over `inbound.agentCard` and `a2a_update_agent_card` for overlapping fields via `mergeA2AAgentCardConfig`.
+- Use Passport `metadata.webhook_url` as the canonical public ingress base for A2A discovery (`/a2a`, `/.well-known/agent-card.json`); warn when it differs from `inbound.publicBaseUrl`.
+
 
 - Simplify outbound peer identity for LLM tools: Passport peers expose and accept `token_id` only (no redundant `agent_id`); legacy config aliases without a Passport token keep `agent_id`.
 - Rename peer-targeting outbound tool schemas from `agentId` to `token_id`; map `token_id` / `tokenId` inputs to the internal registry key before calling a2a-utils.
