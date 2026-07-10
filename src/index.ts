@@ -18,6 +18,7 @@ import {
     type A2APluginConfig,
     buildRootConfigWithA2A,
     extractA2AEntry,
+    mergeA2AAgentCardConfig,
     PLUGIN_ID,
     parseA2APluginConfig,
 } from "./config.js";
@@ -37,7 +38,7 @@ import {
     DEFAULT_RODIT_LOGIN_PATH,
     DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH,
 } from "./inbound/rodit-login-routes.js";
-import { getRoditOwnConfig } from "./auth/rodit-own-config.js";
+import { resolveRoditAgentCard } from "./auth/rodit-agent-card.js";
 import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
 import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
@@ -410,11 +411,38 @@ const a2aPlugin = definePluginEntry({
             ];
         }
 
+        const authRequired = pluginConfig.inbound?.allowUnauthenticated !== true;
+        const authScheme = resolveInboundAuthScheme(pluginConfig);
+
+        /** Passport-derived Agent Card fields from RoditClient; authoritative over config. */
+        let passportAgentCardDefaults: A2AAgentCardConfig | undefined;
+        /** Passport `webhook_url` ingress base (A2A + webhooks); authoritative over config. */
+        let passportPublicBaseUrl: string | undefined;
+
+        function resolveEffectivePublicBaseUrl(
+            req?: import("node:http").IncomingMessage,
+        ): string {
+            if (passportPublicBaseUrl) {
+                return passportPublicBaseUrl;
+            }
+            const configured = configuredPublicBaseUrl?.trim();
+            if (configured) {
+                return configured.replace(/\/$/, "");
+            }
+            if (req) {
+                return resolvePublicBaseUrl(req);
+            }
+            return resolveStartupPublicBaseUrl();
+        }
+
         function buildCardFor(runtime: InboundEndpointRuntime, publicUrl: string): AgentCard {
             const { agentId, rpcPath } = runtime.endpoint;
             return new AgentCardBuilder({
                 openclawConfig: api.config,
-                agentCardConfig: runtime.liveCardConfig,
+                agentCardConfig: mergeA2AAgentCardConfig(
+                    runtime.liveCardConfig,
+                    passportAgentCardDefaults,
+                ),
                 agentId,
                 rpcPath,
                 publicUrl,
@@ -486,9 +514,6 @@ const a2aPlugin = definePluginEntry({
                 `[a2a] Registered ${outboundTools.tools.length} outbound tools for ${configuredOutboundAgentCount} agent(s)`,
             );
         }
-
-        const authRequired = pluginConfig.inbound?.allowUnauthenticated !== true;
-        const authScheme = resolveInboundAuthScheme(pluginConfig);
 
         // --- Update agent card tool (only when inbound is accepting requests) ---
         const inboundConfigured = isInboundConfigured(pluginConfig);
@@ -605,10 +630,7 @@ const a2aPlugin = definePluginEntry({
                     runtime.httpHandlers = new A2AHttpHandlers({
                         agentCard: card,
                         getAgentCard: (req) =>
-                            buildCardFor(
-                                runtime,
-                                resolvePublicBaseUrl(req, configuredPublicBaseUrl),
-                            ),
+                            buildCardFor(runtime, resolveEffectivePublicBaseUrl(req)),
                         requestHandler,
                         auth: authConfig,
                     });
@@ -643,10 +665,7 @@ const a2aPlugin = definePluginEntry({
                 res: import("node:http").ServerResponse,
             ): Promise<void> => {
                 if (!runtime.httpHandlers) {
-                    await initializeEndpoint(
-                        runtime,
-                        resolvePublicBaseUrl(req, configuredPublicBaseUrl),
-                    );
+                    await initializeEndpoint(runtime, resolveEffectivePublicBaseUrl(req));
                 }
                 if (runtime.httpHandlers) {
                     await dispatch(runtime.httpHandlers, req, res);
@@ -735,8 +754,30 @@ const a2aPlugin = definePluginEntry({
                     pluginConfig.inbound?.auth?.provider === "rodit" || isRoditLoginEnabled(pluginConfig);
                 if (inboundRodit) {
                     try {
-                        await getRoditOwnConfig(pluginConfig.inbound?.auth?.logLevel);
-                        api.logger.info("[a2a] RODiT passport warmed up for inbound auth");
+                        const resolved = await resolveRoditAgentCard({
+                            logLevel: pluginConfig.inbound?.auth?.logLevel,
+                        });
+                        passportAgentCardDefaults = resolved.agentCard;
+                        if (resolved.publicBaseUrl) {
+                            passportPublicBaseUrl = resolved.publicBaseUrl;
+                            const configured = configuredPublicBaseUrl?.trim().replace(/\/$/, "");
+                            if (configured && configured !== passportPublicBaseUrl) {
+                                api.logger.warn(
+                                    `[a2a] inbound.publicBaseUrl (${configured}) differs from Passport webhook_url (${passportPublicBaseUrl}); using Passport webhook_url for A2A discovery`,
+                                );
+                            } else {
+                                api.logger.info(
+                                    `[a2a] Agent ingress base from Passport webhook_url: ${passportPublicBaseUrl}`,
+                                );
+                            }
+                        }
+                        if (resolved.agentCard?.name) {
+                            api.logger.info(
+                                `[a2a] Agent Card defaults loaded from Passport (${resolved.agentCard.name})`,
+                            );
+                        } else {
+                            api.logger.info("[a2a] RODiT passport warmed up for inbound auth");
+                        }
                     } catch (err) {
                         api.logger.error(
                             `[a2a] RODiT inbound warmup failed: ${formatStartupError(err)}`,
@@ -745,10 +786,10 @@ const a2aPlugin = definePluginEntry({
                     }
                 }
 
-                const startupPublicUrl = resolveStartupPublicBaseUrl(configuredPublicBaseUrl);
-                if (!configuredPublicBaseUrl?.trim()) {
+                const startupPublicUrl = resolveEffectivePublicBaseUrl();
+                if (!passportPublicBaseUrl && !configuredPublicBaseUrl?.trim()) {
                     startupCaveats.push(
-                        "inbound.publicBaseUrl unset; Agent Card URLs use http://localhost until configured or derived from the first request",
+                        "Passport webhook_url and inbound.publicBaseUrl unset; Agent Card URLs use http://localhost until Passport metadata or the first request provides an ingress base",
                     );
                 }
 

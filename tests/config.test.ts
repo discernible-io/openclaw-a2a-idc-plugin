@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, test } from "bun:test";
-import { PLUGIN_ID, buildRootConfigWithA2A, parseA2APluginConfig } from "../src/config.js";
+import { PLUGIN_ID, buildRootConfigWithA2A, mergeA2AAgentCardConfig, parseA2APluginConfig } from "../src/config.js";
 import {
     assertUniqueA2AInboundKeyLabels,
     assertValidA2AInboundKeyLabel,
@@ -631,5 +631,43 @@ describe("buildRootConfigWithA2A", () => {
         });
         expect(warnings.some((w) => w.includes("dual") && w.includes("removed"))).toBe(true);
         expect(warnings.some((w) => w.includes("p2pIssuer"))).toBe(true);
+    });
+});
+
+describe("mergeA2AAgentCardConfig", () => {
+    test("lets authoritative passport values override explicit config on conflict", () => {
+        const merged = mergeA2AAgentCardConfig(
+            {
+                name: "Config Name",
+                description: "From openclaw.json",
+                skills: [{ id: "chat", name: "Chat", description: "Configured skill" }],
+                extensions: {
+                    identyclaw: {
+                        passportTokenId: "config-token",
+                        registryId: "com.example.agent",
+                    },
+                },
+            },
+            {
+                name: "Passport Name",
+                extensions: {
+                    identyclaw: {
+                        passportTokenId: "Abcd1234efgh",
+                        did: "did:rodit:Abcd1234efgh",
+                    },
+                },
+            },
+        );
+
+        expect(merged?.name).toBe("Passport Name");
+        expect(merged?.description).toBe("From openclaw.json");
+        expect(merged?.skills).toEqual([
+            { id: "chat", name: "Chat", description: "Configured skill" },
+        ]);
+        expect(merged?.extensions?.identyclaw).toEqual({
+            passportTokenId: "Abcd1234efgh",
+            did: "did:rodit:Abcd1234efgh",
+            registryId: "com.example.agent",
+        });
     });
 });

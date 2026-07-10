@@ -778,6 +778,25 @@ export function extractA2AEntry(rootConfig: Record<string, unknown>): {
     return { pluginsEntries, a2aEntry, a2aConfig };
 }
 
+export function mergeA2AAgentCardConfig(
+    secondary?: A2AAgentCardConfig,
+    authoritative?: A2AAgentCardConfig,
+): A2AAgentCardConfig | undefined {
+    if (!secondary && !authoritative) {
+        return undefined;
+    }
+    if (!secondary) {
+        return authoritative;
+    }
+    if (!authoritative) {
+        return secondary;
+    }
+    return mergeAgentCardConfig(
+        secondary as Record<string, unknown>,
+        authoritative as Record<string, unknown>,
+    ) as A2AAgentCardConfig;
+}
+
 function mergeAgentCardConfig(
     existing: Record<string, unknown>,
     update: Record<string, unknown>,

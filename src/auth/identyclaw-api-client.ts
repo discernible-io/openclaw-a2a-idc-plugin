@@ -19,9 +19,12 @@ export type TokenIdentityFullResponse = {
     metadata?: {
         webhook_url?: string | null;
         webhookUrl?: string | null;
+        userselected_dn?: string | null;
     } | null;
     dn?: {
         contactUri?: string | null;
+        creature?: string | null;
+        face?: string | null;
     } | null;
 };
 

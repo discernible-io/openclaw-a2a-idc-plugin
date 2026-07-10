@@ -5,6 +5,13 @@
 import { normalizeGatewayBase } from "./contact-uri.js";
 import type { TokenIdentityFullResponse } from "./identyclaw-api-client.js";
 
+/**
+ * Passport `metadata.webhook_url` is the agent's public ingress origin — the same
+ * base where OpenClaw serves A2A (`/a2a`, `/.well-known/agent-card.json`) and
+ * IdentyClaw webhooks (`/hooks/agent`, `/hooks/wake`, etc.). Store it without a
+ * hook path; callers append the route they need.
+ */
+
 export function extractWebhookUrlFromIdentity(
     identity: Pick<TokenIdentityFullResponse, "metadata">,
 ): string | null {
@@ -13,6 +20,7 @@ export function extractWebhookUrlFromIdentity(
     return trimmed || null;
 }
 
+/** Normalize Passport `webhook_url` to `scheme://host[:port]` (no path). */
 export function webhookUrlToGatewayBase(webhookUrl: string): string | null {
     const trimmed = String(webhookUrl ?? "").trim();
     if (!trimmed || /^mailto:/i.test(trimmed) || /^email:/i.test(trimmed)) {

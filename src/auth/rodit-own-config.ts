@@ -22,7 +22,7 @@ export type RoditOwnConfig = Parameters<RoditLoginServerFn>[0] & {
     own_rodit: {
         token_id: string;
         owner_id: string;
-        metadata: { subjectuniqueidentifier_url: string; webhook_url?: string };
+        metadata: { subjectuniqueidentifier_url: string; webhook_url?: string; userselected_dn?: string };
     };
     own_rodit_bytes_private_key: Uint8Array;
 };
