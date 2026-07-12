@@ -38,7 +38,9 @@ Each inbound message creates a separate conversation identified by the sender la
 
 ## 📺 Reference demo (upstream)
 
-The upstream project published a generic OpenClaw A2A walkthrough (API-key auth): [OpenClaw A2A Plugin Demo](https://youtu.be/bodb7ATn5nc?si=9uVltb4K6-4Z8hPE). IdentyClaw deployments use RODiT JWT peers instead of static API keys — see [IdentyClaw usage](#-identyclaw-usage-rodit-peers) below.
+> **IdentyClaw vs upstream:** The upstream demo uses **API keys** (`Authorization: Bearer <api-key>`). IdentyClaw deployments use **Passport JWT via RODiT** for peer messaging — do **not** copy static Bearer header patterns from the upstream video. See [IdentyClaw usage](#-identyclaw-usage-rodit-peers) below.
+
+The upstream project published a generic OpenClaw A2A walkthrough: [OpenClaw A2A Plugin Demo](https://youtu.be/bodb7ATn5nc?si=9uVltb4K6-4Z8hPE).
 
 ## 📦 Installation
 
@@ -76,6 +78,10 @@ Follow the set up instructions in "🔐 IdentyClaw usage (RODiT peers)", "📤 S
 | MCP (canonical docs) | `https://api.identyclaw.com/mcp` | Live IdentyClaw API documentation |
 
 `identyclaw-tools` and this plugin can share `IDENTYCLAW_ACCOUNT_ID`, `IDENTYCLAW_NEAR_PRIVATE_KEY`, and `IDENTYCLAW_BASE_URL`. HOLA stays application-layer via `identyclaw_*` tools; A2A peer calls use Passport JWTs automatically through this component.
+
+> **Pair with the tools plugin:** A2A Passport JWTs authenticate the wire protocol only. Application-layer HOLA and identity tools live in [`openclaw-identyclaw-plugin`](https://github.com/discernible-io/openclaw-identyclaw-plugin) — **A2A JWT ≠ HOLA**.
+
+> **Recommended deploy:** For production TLS and nginx routing of `/a2a` and `/.well-known/agent-card.json`, use the [`identyclaw-agents`](https://github.com/discernible-io/identyclaw-agents) template (`./identyclaw.sh init`, deploy scripts, smoke tests).
 
 ## 🔐 IdentyClaw usage (RODiT peers)
 
@@ -150,12 +156,12 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 | `auth.peerTimestampPath` | `string` | `/api/login/timestamp` | Timestamp challenge path on the peer gateway |
 | `resolvePeersByTokenId` | `boolean` | `true` (with `auth.provider: "rodit"`) | Resolve unknown Passport `token_id` peers via IdentyClaw API `/full`, then on-chain `metadata.webhook_url` fallback |
 | `persistResolvedPeers` | `boolean` | `false` | Persist resolved peers to `stateDir/a2a/outbound/peers.json` |
+| `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
+| `agents.*.loginBaseUrl` | `string` | derived from Agent Card URL | Override P2P login target when it differs from the card origin |
 
 When `resolvePeersByTokenId` is enabled, `a2a_send_message` can target a bare Passport `token_id` not listed in `outbound.agents`. The plugin tries `GET /api/identity/token/{tokenId}/full` (authenticated with your NEAR creds), reads **`metadata.webhook_url`**, and falls back to NEAR chain lookup (`nearorg_rpc_tokenfromroditid`) when the API is unavailable or has no webhook. It then registers `{webhook_url}/.well-known/agent-card.json` before normal P2P login. DN `contactUri` is **not** used for A2A discovery — it is identity contact metadata (often `email:…`). Use `identyclaw_get_agent_identity` when you need DN traits.
 
 **Peer identity:** key `outbound.agents` by Passport `token_id` (recommended). The `a2a_*` tools expose and accept `token_id` for peers; legacy config aliases without a Passport token (e.g. dev self-loop `self`) use `agent_id` instead.
-| `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
-| `agents.*.loginBaseUrl` | `string` | derived from Agent Card URL | Override P2P login target when it differs from the card origin |
 
 Non-auth `custom_headers` on individual agents still work (e.g. tracing headers).
 
@@ -239,10 +245,11 @@ Outbound peers use the **discovery URL from their config** (`outbound.agents.<id
 
 ### External URL layout (same host)
 
-A2A shares the gateway host with OpenClaw hooks but uses separate paths:
+> **Same-host layout:** A2A shares the gateway with OpenClaw hooks on separate paths. For RODiT-signed webhook ingress on `/hooks/wake` and `/hooks/agent`, pair with [`openclaw-identyclaw-webhooks-plugin`](https://github.com/discernible-io/openclaw-identyclaw-webhooks-plugin). Set `inbound.publicBaseUrl` to match Passport **`metadata.webhook_url`** (gateway base — scheme, host, port — with no path suffix).
 
 ```text
 agent-a.example.com/hooks/agent              → OpenClaw hooks (unchanged)
+agent-a.example.com/hooks/wake               → OpenClaw wake hook (webhooks plugin)
 agent-a.example.com/a2a                      → A2A JSON-RPC
 agent-a.example.com/.well-known/agent-card.json  → A2A discovery
 ```
@@ -369,6 +376,7 @@ exposure needed.
 | `auth.jwtCacheTtlSeconds`     | `number`                                 | `300`   | Per-peer JWT cache TTL in seconds before re-login.                   |
 | `auth.peerLoginPath`          | `string`                                 | `/api/login` | Login path on peer gateways.                              |
 | `auth.peerTimestampPath`      | `string`                                 | `/api/login/timestamp` | Timestamp challenge path on peer gateways.      |
+| `auth.logLevel`               | `string`                                 | `error` | Winston level for `rodit-auth-be` when loaded. |
 | `agents.*.loginBaseUrl`       | `string`                                 | derived | Override P2P login base when it differs from the Agent Card origin. |
 | `resolvePeersByTokenId`       | `boolean`                                | `true` with RODiT auth | Resolve unknown peers via API `/full`, then on-chain `metadata.webhook_url`. |
 | `persistResolvedPeers`        | `boolean`                                | `false` | Persist resolved peers under `stateDir/a2a/outbound/peers.json`. |
@@ -806,3 +814,7 @@ Apache-2.0
 - **Upstream A2A plugin:** [a2anet/openclaw-a2a-plugin](https://github.com/a2anet/openclaw-a2a-plugin) — API-key auth baseline we forked
 - **A2A protocol:** [a2a-protocol.org](https://a2a-protocol.org)
 - **A2A Net community:** [a2anet.com](https://a2anet.com) · [Discord](https://discord.gg/674NGXpAjU)
+
+---
+
+[discernible.io](https://www.discernible.io/#developers) · [sdk](https://github.com/discernible-io/sdk) · [idclawserver-idc](https://github.com/discernible-io/idclawserver-idc)
