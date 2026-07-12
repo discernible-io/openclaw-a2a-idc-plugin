@@ -266,7 +266,7 @@ Both repos are private to the Discernible org — clone locally when implementin
 | Upstream | `https://github.com/a2anet/openclaw-a2a-plugin` |
 | License | Apache 2.0 (retain LICENSE + NOTICE; document modifications) |
 | New repo | `discernible-io/openclaw-a2a-idc-plugin` |
-| npm package | `@discernible-io/openclaw-a2a-idc-plugin` |
+| npm package | `@identyclaw/openclaw-a2a-plugin` |
 | OpenClaw plugin id | Keep `"a2a"` if possible (minimizes `openclaw.json` churn) |
 | Pin upstream | Tag/commit at fork time; document in `UPSTREAM.md` |
 
