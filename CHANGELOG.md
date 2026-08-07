@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.8 — 2026-07-16
+
+- Bump `@rodit/rodit-auth-be` to `9.14.0`.
+
 ## 0.4.7 — 2026-07-10
 
 - Resolve inbound Agent Card fields dynamically from `RoditClient.getConfigOwnRodit()` and IdentyClaw `GET /api/identity/token/{tokenId}/full` (name, `extensions.identyclaw`, contact URIs).
