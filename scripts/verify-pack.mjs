@@ -52,9 +52,9 @@ for (const entry of forbidden) {
   }
 }
 
-/** Patterns that ClawHub static analysis flags on published dist/ files. */
+/** Patterns that ClawHub static analysis incorrectly flags on published dist/ files. */
 const clawhubScanPatterns = [
-  { name: "insecure TLS skip", re: /rejectUnauthorized\s*:\s*false/ },
+  // Env-name maps like `privateKey: "SOME_ENV"` trip suspicious.exposed_secret_literal.
   { name: "privateKey string literal", re: /privateKey\s*:\s*["'`]/ },
 ];
 

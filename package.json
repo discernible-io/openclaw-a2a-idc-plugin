@@ -1,6 +1,6 @@
 {
     "name": "@identyclaw/openclaw-a2a-plugin",
-    "version": "0.4.9",
+    "version": "0.4.10",
     "description": "IdentyClaw fork of the OpenClaw A2A plugin with RODiT / Passport JWT authentication for peer agents.",
     "type": "module",
     "exports": {
@@ -63,6 +63,7 @@
         "@a2anet/a2a-utils": "^0.7.2",
         "@rodit/rodit-auth-be": "9.14.0",
         "@sinclair/typebox": "^0.34.0",
+        "undici": "^6.28.0",
         "zod": "^3.25.0",
         "zod-to-json-schema": "^3.25.1"
     },

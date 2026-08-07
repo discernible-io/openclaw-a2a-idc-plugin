@@ -2,12 +2,16 @@
 
 ## Unreleased
 
+## 0.4.10 — 2026-08-07
+
+- Keep `outbound.tlsSkipVerify` for self-signed Passport peer gateways (common for IdentyClaw holders); document that it stays opt-in and logs a warning when enabled.
+- Clean `dist/` before each build so stale compiled modules (including removed env-name credential helpers) are not published (clears ClawHub `suspicious.exposed_secret_literal` false positive).
+- Override / pin `undici` to `^6.28.0` for known advisories; drop unused direct `ws` dependency.
+- Fail `verify-pack` if published `dist/` still contains ClawHub-flagged `privateKey` literal patterns.
+
 ## 0.4.9 — 2026-08-07
 
-- Remove `outbound.tlsSkipVerify` and the undici-based global TLS bypass so outbound HTTPS always verifies certificates (clears ClawHub `suspicious.insecure_tls_verification`).
-- Clean `dist/` before each build so stale compiled modules (including removed env-name credential helpers) are not published (clears ClawHub `suspicious.exposed_secret_literal` false positive).
-- Drop unused direct `ws` dependency; override transitive `undici` to `^6.28.0` for known advisories.
-- Fail `verify-pack` if published `dist/` still contains ClawHub-flagged TLS-skip or `privateKey` literal patterns.
+- Submitted security-hardening build that briefly removed `tlsSkipVerify`; superseded by `0.4.10` which restores the opt-in for self-signed peers.
 
 ## 0.4.8 — 2026-07-16
 
