@@ -1,6 +1,6 @@
 {
     "name": "@identyclaw/openclaw-a2a-plugin",
-    "version": "0.4.8",
+    "version": "0.4.9",
     "description": "IdentyClaw fork of the OpenClaw A2A plugin with RODiT / Passport JWT authentication for peer agents.",
     "type": "module",
     "exports": {
@@ -18,7 +18,7 @@
         "LICENSE"
     ],
     "scripts": {
-        "build": "tsc",
+        "build": "rm -rf dist && tsc",
         "prepare:publish": "npm run build && node ./scripts/verify-pack.mjs",
         "publish:clawhub:dry-run": "node ./scripts/publish-clawhub.mjs --dry-run",
         "publish:clawhub": "node ./scripts/publish-clawhub.mjs",
@@ -63,13 +63,14 @@
         "@a2anet/a2a-utils": "^0.7.2",
         "@rodit/rodit-auth-be": "9.14.0",
         "@sinclair/typebox": "^0.34.0",
-        "undici": "^6.26.0",
-        "ws": "^8.19.0",
         "zod": "^3.25.0",
         "zod-to-json-schema": "^3.25.1"
     },
     "peerDependencies": {
         "openclaw": ">=2026.5.17"
+    },
+    "overrides": {
+        "undici": "^6.28.0"
     },
     "devDependencies": {
         "@biomejs/biome": "^1.9.0",

@@ -41,7 +41,6 @@ import {
 import { resolveRoditAgentCard } from "./auth/rodit-agent-card.js";
 import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
-import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
 import { createOutboundTools } from "./outbound/tools.js";
 import { OpenClawA2ARequestHandler } from "./inbound/request-handler.js";
 import { createUpdateAgentCardTool } from "./tools/update-agent-card.js";
@@ -484,9 +483,6 @@ const a2aPlugin = definePluginEntry({
                     );
                 }
             }
-            configureOutboundTlsSkipVerify(outbound.tlsSkipVerify === true, (message) =>
-                api.logger.warn(message),
-            );
             const outboundTools = createOutboundTools({
                 agents: outbound.agents ?? {},
                 auth: outbound.auth,

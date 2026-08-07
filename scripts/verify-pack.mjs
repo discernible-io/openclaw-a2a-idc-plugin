@@ -3,8 +3,8 @@
  * Ensure npm pack includes files required for ClawHub / OpenClaw install.
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,6 +49,35 @@ for (const entry of forbidden) {
   if (output.includes(entry)) {
     console.error(`[verify-pack] forbidden path in npm pack: ${entry}`);
     process.exit(1);
+  }
+}
+
+/** Patterns that ClawHub static analysis flags on published dist/ files. */
+const clawhubScanPatterns = [
+  { name: "insecure TLS skip", re: /rejectUnauthorized\s*:\s*false/ },
+  { name: "privateKey string literal", re: /privateKey\s*:\s*["'`]/ },
+];
+
+function walkJsFiles(dir, files = []) {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    const st = statSync(full);
+    if (st.isDirectory()) walkJsFiles(full, files);
+    else if (entry.endsWith(".js") && !entry.endsWith(".js.map")) files.push(full);
+  }
+  return files;
+}
+
+const distDir = join(pluginRoot, "dist");
+for (const file of walkJsFiles(distDir)) {
+  const text = readFileSync(file, "utf8");
+  for (const { name, re } of clawhubScanPatterns) {
+    if (re.test(text)) {
+      console.error(
+        `[verify-pack] ClawHub scan hazard (${name}) in ${relative(pluginRoot, file)}`
+      );
+      process.exit(1);
+    }
   }
 }
 

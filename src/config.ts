@@ -110,8 +110,6 @@ export type A2AOutboundAuthConfig = A2AOutboundRoditAuthConfig;
 export type A2AOutboundConfig = {
     agents?: Record<string, A2AAgentEntry>;
     auth?: A2AOutboundAuthConfig;
-    /** When true, skip TLS certificate verification for outbound HTTPS (peer agent cards + RPC). */
-    tlsSkipVerify?: boolean;
     /** Resolve unknown Passport token_id peers via IdentyClaw identity API (default true with rodit auth). */
     resolvePeersByTokenId?: boolean;
     /** Persist identity-resolved peers under stateDir/a2a/outbound/peers.json. */
@@ -547,7 +545,12 @@ function parseOutbound(
     const sendMessageTimeout = parsePositiveNumber(raw.sendMessageTimeout);
     const getTaskTimeout = parsePositiveNumber(raw.getTaskTimeout);
     const getTaskPollInterval = parsePositiveNumber(raw.getTaskPollInterval);
-    const tlsSkipVerify = raw.tlsSkipVerify === true ? true : undefined;
+    if (raw.tlsSkipVerify !== undefined) {
+        pushConfigWarning(
+            warnings,
+            "outbound.tlsSkipVerify was removed; outbound HTTPS always verifies TLS certificates",
+        );
+    }
     const resolvePeersByTokenId =
         raw.resolvePeersByTokenId === false
             ? false
@@ -559,7 +562,6 @@ function parseOutbound(
     const result: A2AOutboundConfig = {};
     if (agents) result.agents = agents;
     if (auth) result.auth = auth;
-    if (tlsSkipVerify !== undefined) result.tlsSkipVerify = tlsSkipVerify;
     if (resolvePeersByTokenId !== undefined) result.resolvePeersByTokenId = resolvePeersByTokenId;
     if (persistResolvedPeers !== undefined) result.persistResolvedPeers = persistResolvedPeers;
     if (taskStore !== undefined) result.taskStore = taskStore;

@@ -58,11 +58,16 @@ describe("parseA2APluginConfig", () => {
         });
     });
 
-    test("parses outbound tlsSkipVerify", () => {
-        expect(
-            parseA2APluginConfig({ outbound: { tlsSkipVerify: true } }).outbound?.tlsSkipVerify,
-        ).toBe(true);
-        expect(parseA2APluginConfig({ outbound: { tlsSkipVerify: false } }).outbound).toEqual({});
+    test("warns that outbound tlsSkipVerify was removed", () => {
+        const warnings: string[] = [];
+        const result = parseA2APluginConfig(
+            { outbound: { tlsSkipVerify: true, agents: { peer: { url: "https://example.com" } } } },
+            warnings,
+        );
+        expect(result.outbound?.tlsSkipVerify).toBeUndefined();
+        expect(warnings).toContain(
+            "outbound.tlsSkipVerify was removed; outbound HTTPS always verifies TLS certificates",
+        );
     });
 
     test("collects warnings for silently dropped config entries", () => {

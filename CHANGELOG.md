@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.9 — 2026-08-07
+
+- Remove `outbound.tlsSkipVerify` and the undici-based global TLS bypass so outbound HTTPS always verifies certificates (clears ClawHub `suspicious.insecure_tls_verification`).
+- Clean `dist/` before each build so stale compiled modules (including removed env-name credential helpers) are not published (clears ClawHub `suspicious.exposed_secret_literal` false positive).
+- Drop unused direct `ws` dependency; override transitive `undici` to `^6.28.0` for known advisories.
+- Fail `verify-pack` if published `dist/` still contains ClawHub-flagged TLS-skip or `privateKey` literal patterns.
+
 ## 0.4.8 — 2026-07-16
 
 - Bump `@rodit/rodit-auth-be` to `9.14.0`.

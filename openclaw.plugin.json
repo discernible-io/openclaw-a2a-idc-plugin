@@ -2,7 +2,7 @@
     "id": "identyclaw-a2a",
     "name": "OpenClaw A2A Plugin",
     "description": "A2A peer messaging with RODiT / Passport JWT authentication",
-    "version": "0.4.8",
+    "version": "0.4.9",
     "activation": {
         "onStartup": true
     },
@@ -41,10 +41,6 @@
         "outbound.auth.logLevel": {
             "label": "RODiT Log Level",
             "help": "Winston log level for @rodit/rodit-auth-be when loaded (default error)"
-        },
-        "outbound.tlsSkipVerify": {
-            "label": "Skip TLS Verify",
-            "help": "When true, disable TLS certificate verification for outbound HTTPS to peer agents"
         },
         "inbound": {
             "label": "Inbound",
@@ -198,7 +194,6 @@
                     "sendMessageTimeout": { "type": "number" },
                     "getTaskTimeout": { "type": "number" },
                     "getTaskPollInterval": { "type": "number" },
-                    "tlsSkipVerify": { "type": "boolean" },
                     "resolvePeersByTokenId": {
                         "type": "boolean",
                         "description": "Resolve unknown Passport token_id peers via IdentyClaw API /full, then on-chain metadata.webhook_url fallback (default true with rodit outbound auth)"
