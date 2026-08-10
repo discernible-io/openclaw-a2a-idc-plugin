@@ -385,4 +385,61 @@ describe("handleJsonRpc", () => {
         expect(res.getBody()).toContain("data:");
         expect(res.getBody()).toContain('"kind":"status-update"');
     });
+
+    test("emits audit events for auth failure and successful send", async () => {
+        const events: Array<Record<string, unknown>> = [];
+        const audit = {
+            enabled: true,
+            logDir: "",
+            log(input: Record<string, unknown>) {
+                events.push(input);
+            },
+        };
+
+        const unauth = new A2AHttpHandlers({
+            agentCard: makeAgentCard(),
+            requestHandler: makeMockRequestHandler(),
+            auth: { required: true, mode: "apiKey", validKeys: [{ label: "test", key: "secret" }] },
+            audit: audit as never,
+        });
+        await unauth.handleJsonRpc(
+            makeReq("POST", {
+                jsonrpc: "2.0",
+                id: 1,
+                method: "message/send",
+                params: { message: { role: "user", parts: [{ kind: "text", text: "hi" }] } },
+            }),
+            makeRes(),
+        );
+        expect(events.some((e) => e.eventType === "auth_failure")).toBe(true);
+
+        events.length = 0;
+        const auth = new A2AHttpHandlers({
+            agentCard: makeAgentCard(),
+            requestHandler: makeMockRequestHandler(),
+            auth: { required: true, mode: "apiKey", validKeys: [{ label: "test", key: "secret" }] },
+            audit: audit as never,
+            agentId: "default",
+        });
+        await auth.handleJsonRpc(
+            makeReq(
+                "POST",
+                {
+                    jsonrpc: "2.0",
+                    id: 1,
+                    method: "message/send",
+                    params: {
+                        message: { role: "user", parts: [{ kind: "text", text: "ping" }] },
+                    },
+                },
+                { authorization: "Bearer secret" },
+            ),
+            makeRes(),
+        );
+        expect(events.some((e) => e.eventType === "auth_success")).toBe(true);
+        expect(events.some((e) => e.eventType === "message_received")).toBe(true);
+        const received = events.find((e) => e.eventType === "message_received");
+        expect(received?.sourceAgent).toBe("test");
+        expect(String(received?.contentSummary)).toContain("ping");
+    });
 });

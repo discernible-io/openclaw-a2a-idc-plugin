@@ -143,9 +143,25 @@ export type A2AInboundConfig = {
     roditLogin?: A2AInboundRoditLoginConfig;
 };
 
+export type A2AAuditConfig = {
+    /** When true, write NDJSON audit logs. Default false (opt-in). */
+    enabled?: boolean;
+    /**
+     * Directory for daily `a2a-audit-YYYY-MM-DD.jsonl` files.
+     * Default: `{stateDir}/a2a/audit`.
+     */
+    logDir?: string;
+    /** Delete rotated audit files older than this many days. Default 30. */
+    retentionDays?: number;
+    /** Include truncated `content_summary` (never JWTs). Default true. */
+    includeContentSummary?: boolean;
+};
+
 export type A2APluginConfig = {
     outbound?: A2AOutboundConfig;
     inbound?: A2AInboundConfig;
+    /** Structured A2A audit logging (NDJSON under stateDir by default). */
+    audit?: A2AAuditConfig;
 };
 
 type ConfigParseWarnings = string[];
@@ -748,6 +764,40 @@ function parseInbound(
     };
 }
 
+function parseAudit(value: unknown, warnings?: ConfigParseWarnings): A2AAuditConfig | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        if (Array.isArray(value)) {
+            pushConfigWarning(warnings, "audit must be an object, skipped");
+        }
+        return undefined;
+    }
+    const raw = value as Record<string, unknown>;
+    const enabled = typeof raw.enabled === "boolean" ? raw.enabled : undefined;
+    const logDir = typeof raw.logDir === "string" ? raw.logDir.trim() || undefined : undefined;
+    if (typeof raw.logDir === "string" && raw.logDir.trim().length === 0) {
+        pushConfigWarning(warnings, "audit.logDir: empty string ignored");
+    }
+    const retentionDays = parsePositiveNumber(raw.retentionDays);
+    const includeContentSummary =
+        typeof raw.includeContentSummary === "boolean" ? raw.includeContentSummary : undefined;
+
+    if (
+        enabled === undefined &&
+        logDir === undefined &&
+        retentionDays === undefined &&
+        includeContentSummary === undefined
+    ) {
+        return undefined;
+    }
+
+    return {
+        ...(enabled !== undefined ? { enabled } : {}),
+        ...(logDir ? { logDir } : {}),
+        ...(retentionDays !== undefined ? { retentionDays } : {}),
+        ...(includeContentSummary !== undefined ? { includeContentSummary } : {}),
+    };
+}
+
 export function parseA2APluginConfig(
     value: unknown,
     warnings?: ConfigParseWarnings,
@@ -758,10 +808,12 @@ export function parseA2APluginConfig(
     const raw = value as Record<string, unknown>;
     const outbound = parseOutbound(raw.outbound, warnings);
     const inbound = parseInbound(raw.inbound, warnings);
+    const audit = parseAudit(raw.audit, warnings);
 
     return {
         ...(outbound ? { outbound } : {}),
         ...(inbound ? { inbound } : {}),
+        ...(audit ? { audit } : {}),
     };
 }
 

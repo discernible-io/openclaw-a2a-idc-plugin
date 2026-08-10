@@ -4,9 +4,11 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { A2AInboundRoditLoginConfig } from "../config.js";
+import type { A2AAuditLogger } from "../audit/logger.js";
+import { extractSafeLoginPeer } from "../audit/redact.js";
 import { applyRoditEmbedEnv } from "../auth/rodit-embed-env.js";
 import { loadRoditAuthBe } from "../auth/rodit-runtime.js";
+import type { A2AInboundRoditLoginConfig } from "../config.js";
 
 export const DEFAULT_RODIT_LOGIN_PATH = "/api/login";
 export const DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH = "/api/login/timestamp";
@@ -126,10 +128,16 @@ export type RoditLoginRouteHandlers = {
     handleLogin: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 };
 
+export type CreateRoditLoginRouteHandlersOptions = {
+    audit?: A2AAuditLogger;
+};
+
 export function createRoditLoginRouteHandlers(
     config: A2AInboundRoditLoginConfig,
+    options: CreateRoditLoginRouteHandlersOptions = {},
 ): RoditLoginRouteHandlers {
     applyRoditLoginMode(config);
+    const audit = options.audit;
 
     return {
         async handleLoginTimestamp(_req, res) {
@@ -141,6 +149,7 @@ export function createRoditLoginRouteHandlers(
         },
 
         async handleLogin(req, res) {
+            const started = Date.now();
             if (req.method !== "POST") {
                 res.setHeader("Allow", "POST");
                 res.statusCode = 405;
@@ -153,9 +162,17 @@ export function createRoditLoginRouteHandlers(
                 sendJson(res, 400, {
                     error: { code: "INVALID_JSON", message: bodyResult.error },
                 });
+                audit?.log({
+                    eventType: "login_failure",
+                    direction: "inbound",
+                    status: "failure",
+                    durationMs: Date.now() - started,
+                    error: { code: "INVALID_JSON", message: bodyResult.error },
+                });
                 return;
             }
 
+            const peer = extractSafeLoginPeer(bodyResult.body);
             try {
                 const client = await getRoditClient();
                 const expressReq = attachParsedBody(req, bodyResult.body);
@@ -163,6 +180,23 @@ export function createRoditLoginRouteHandlers(
                     Object.assign(expressReq, { ip: "" });
                 }
                 await client.login_client(expressReq, wrapExpressLikeResponse(res));
+                const ok = res.statusCode < 400;
+                audit?.log({
+                    eventType: ok ? "login_success" : "login_failure",
+                    direction: "inbound",
+                    status: ok ? "success" : "failure",
+                    sourceAgent: peer,
+                    durationMs: Date.now() - started,
+                    metadata: { http_status: res.statusCode },
+                    ...(ok
+                        ? {}
+                        : {
+                              error: {
+                                  code: "RODIT_LOGIN_REJECTED",
+                                  message: `login response status ${res.statusCode}`,
+                              },
+                          }),
+                });
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 if (!res.headersSent) {
@@ -170,6 +204,14 @@ export function createRoditLoginRouteHandlers(
                         error: { code: "RODIT_LOGIN_ERROR", message },
                     });
                 }
+                audit?.log({
+                    eventType: "login_failure",
+                    direction: "inbound",
+                    status: "failure",
+                    sourceAgent: peer,
+                    durationMs: Date.now() - started,
+                    error: { code: "RODIT_LOGIN_ERROR", message },
+                });
             }
         },
     };

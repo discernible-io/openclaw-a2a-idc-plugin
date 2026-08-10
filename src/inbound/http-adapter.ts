@@ -7,6 +7,12 @@ import type { AgentCard } from "@a2a-js/sdk";
 import type { A2ARequestHandler, User } from "@a2a-js/sdk/server";
 import { JsonRpcTransportHandler, ServerCallContext } from "@a2a-js/sdk/server";
 
+import type { A2AAuditLogger } from "../audit/logger.js";
+import {
+    extractJsonRpcMethod,
+    extractTaskContextIds,
+    summarizeMessageContent,
+} from "../audit/redact.js";
 import { type A2AAuthConfig, authenticateInboundRequest } from "../auth/authenticate-inbound.js";
 import { sendAuthError } from "./auth.js";
 
@@ -35,6 +41,9 @@ export type A2AHttpHandlerParams = {
     getAgentCard?: (req: IncomingMessage) => AgentCard;
     requestHandler: A2ARequestHandler;
     auth?: A2AAuthConfig;
+    audit?: A2AAuditLogger;
+    /** Local inbound agent id (multi-agent mode) for audit metadata. */
+    agentId?: string;
 };
 
 export class A2AHttpHandlers {
@@ -45,10 +54,39 @@ export class A2AHttpHandlers {
     }
 
     async handleAgentCard(req: IncomingMessage, res: ServerResponse): Promise<void> {
-        this.sendJson(res, 200, this.params.getAgentCard?.(req) ?? this.params.agentCard);
+        const started = Date.now();
+        try {
+            this.sendJson(res, 200, this.params.getAgentCard?.(req) ?? this.params.agentCard);
+            this.params.audit?.log({
+                eventType: "agent_discovered",
+                direction: "inbound",
+                status: "success",
+                durationMs: Date.now() - started,
+                metadata: {
+                    ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                    path: "agent-card",
+                },
+            });
+        } catch (err) {
+            this.params.audit?.log({
+                eventType: "error",
+                direction: "inbound",
+                status: "failure",
+                durationMs: Date.now() - started,
+                error: {
+                    message: err instanceof Error ? err.message : String(err),
+                },
+                metadata: {
+                    ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                    path: "agent-card",
+                },
+            });
+            throw err;
+        }
     }
 
     async handleJsonRpc(req: IncomingMessage, res: ServerResponse): Promise<void> {
+        const started = Date.now();
         if (req.method !== "POST") {
             res.setHeader("Allow", "POST");
             res.statusCode = 405;
@@ -63,46 +101,139 @@ export class A2AHttpHandlers {
                 id: null,
                 error: { code: -32700, message: bodyResult.error },
             });
+            this.params.audit?.log({
+                eventType: "error",
+                direction: "inbound",
+                status: "failure",
+                durationMs: Date.now() - started,
+                error: { code: "INVALID_JSON", message: bodyResult.error },
+                metadata: {
+                    ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                },
+            });
             return;
         }
 
-        const senderLabel = await this.resolveSenderLabel(req, res);
+        const method = extractJsonRpcMethod(bodyResult.value);
+        const senderLabel = await this.resolveSenderLabel(req, res, method);
         if (!senderLabel) {
             return;
         }
 
-        const serverCallContext = new ServerCallContext(
-            undefined,
-            new A2ARequestUser(senderLabel, this.params.auth?.required === true),
-        );
-        const rpcResponseOrStream = await this.transportHandler.handle(
-            bodyResult.value,
-            serverCallContext,
-        );
+        try {
+            const serverCallContext = new ServerCallContext(
+                undefined,
+                new A2ARequestUser(senderLabel, this.params.auth?.required === true),
+            );
+            const rpcResponseOrStream = await this.transportHandler.handle(
+                bodyResult.value,
+                serverCallContext,
+            );
 
-        if (typeof (rpcResponseOrStream as AsyncGenerator)?.[Symbol.asyncIterator] === "function") {
-            const stream = rpcResponseOrStream as AsyncGenerator<unknown, void, undefined>;
-            this.setSseHeaders(res);
-            try {
-                for await (const event of stream) {
-                    res.write(`data: ${JSON.stringify(event)}\n\n`);
+            if (
+                typeof (rpcResponseOrStream as AsyncGenerator)?.[Symbol.asyncIterator] ===
+                "function"
+            ) {
+                const stream = rpcResponseOrStream as AsyncGenerator<unknown, void, undefined>;
+                this.setSseHeaders(res);
+                try {
+                    for await (const event of stream) {
+                        res.write(`data: ${JSON.stringify(event)}\n\n`);
+                    }
+                    this.logInboundMessage({
+                        senderLabel,
+                        method,
+                        body: bodyResult.value,
+                        response: undefined,
+                        durationMs: Date.now() - started,
+                        streaming: true,
+                    });
+                } catch (err) {
+                    console.error("Error during SSE streaming:", err);
+                    this.params.audit?.log({
+                        eventType: "error",
+                        direction: "inbound",
+                        status: "failure",
+                        sourceAgent: senderLabel,
+                        method,
+                        durationMs: Date.now() - started,
+                        error: {
+                            message: err instanceof Error ? err.message : String(err),
+                        },
+                        metadata: {
+                            ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                            streaming: true,
+                        },
+                    });
+                } finally {
+                    if (!res.writableEnded) {
+                        res.end();
+                    }
                 }
-            } catch (err) {
-                console.error("Error during SSE streaming:", err);
-            } finally {
-                if (!res.writableEnded) {
-                    res.end();
-                }
+                return;
             }
-            return;
-        }
 
-        this.sendJson(res, 200, rpcResponseOrStream);
+            this.sendJson(res, 200, rpcResponseOrStream);
+            this.logInboundMessage({
+                senderLabel,
+                method,
+                body: bodyResult.value,
+                response: rpcResponseOrStream,
+                durationMs: Date.now() - started,
+                streaming: false,
+            });
+        } catch (err) {
+            this.params.audit?.log({
+                eventType: "error",
+                direction: "inbound",
+                status: "failure",
+                sourceAgent: senderLabel,
+                method,
+                durationMs: Date.now() - started,
+                error: {
+                    message: err instanceof Error ? err.message : String(err),
+                },
+                metadata: {
+                    ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                },
+            });
+            throw err;
+        }
+    }
+
+    private logInboundMessage(params: {
+        senderLabel: string;
+        method?: string;
+        body: unknown;
+        response: unknown;
+        durationMs: number;
+        streaming: boolean;
+    }): void {
+        const ids = {
+            ...extractTaskContextIds(params.body),
+            ...extractTaskContextIds(params.response),
+        };
+        this.params.audit?.log({
+            eventType: "message_received",
+            direction: "inbound",
+            status: "success",
+            sourceAgent: params.senderLabel,
+            method: params.method,
+            taskId: ids.taskId,
+            contextId: ids.contextId,
+            contentSummary: summarizeMessageContent(params.body),
+            durationMs: params.durationMs,
+            metadata: {
+                ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                streaming: params.streaming,
+            },
+        });
     }
 
     private async resolveSenderLabel(
         req: IncomingMessage,
         res: ServerResponse,
+        method?: string,
     ): Promise<string | null> {
         if (!this.params.auth?.required) {
             return ANONYMOUS_SENDER_LABEL;
@@ -111,8 +242,32 @@ export class A2AHttpHandlers {
         const result = await authenticateInboundRequest(req, this.params.auth);
         if (!result.ok) {
             sendAuthError(res, result.error);
+            this.params.audit?.log({
+                eventType: "auth_failure",
+                direction: "inbound",
+                status: "failure",
+                method,
+                error: {
+                    code: "AUTH_REQUIRED",
+                    message: result.error,
+                },
+                metadata: {
+                    ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                },
+            });
             return null;
         }
+
+        this.params.audit?.log({
+            eventType: "auth_success",
+            direction: "inbound",
+            status: "success",
+            sourceAgent: result.identity,
+            method,
+            metadata: {
+                ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+            },
+        });
 
         return result.identity;
     }

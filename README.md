@@ -291,12 +291,43 @@ Full rollout plan and staging test tiers: [`a2afork.md`](a2afork.md).
 - **Long-running task support** — if `a2a_send_message` times out, use `a2a_get_task` to monitor until the task reaches a terminal state
 - **Automatic artifact minimization** — large text and data artifacts are automatically minimized for LLM context windows, with dedicated tools for detailed navigation
 - **Inbound authentication** — RODiT / Passport JWT validation (IdentyClaw fork), plus API key-based auth with timing-safe comparison, per-key labels, and CLI key management
+- **Structured audit logging** — opt-in daily NDJSON logs for inbound/outbound A2A and RODiT login (`audit.enabled: true`; query with `openclaw a2a audit`; JWTs never logged)
 - **Outbound RODiT login** — dynamic JWT acquisition and cache refresh for IdentyClaw peers (no static `Authorization` headers in config)
 - **Public base URL** — `inbound.publicBaseUrl` for correct Agent Card URLs behind reverse proxies
 - **Live Agent Card updates** — update your agent's name, description, and skills at runtime with `a2a_update_agent_card` without restarting
 - **Tailscale integration** — expose your agent to the internet via Tailscale Funnel, or restrict to your tailnet with Tailscale Serve
 - **Custom headers and outbound auth** — per-agent custom headers with `${ENV_VAR}` substitution for secrets
 - **Configurable timeouts and limits** — control character limits, timeouts, poll intervals, and whether to enable task and file storage
+
+## 🧾 Audit logging
+
+Inbound `/a2a`, Agent Card discovery, RODiT `/api/login`, and outbound tools can write structured NDJSON to `{stateDir}/a2a/audit/a2a-audit-YYYY-MM-DD.jsonl` (JWTs and secret-looking fields are never logged). **Off by default** — enable with:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "identyclaw-a2a": {
+        "config": {
+          "audit": {
+            "enabled": true,
+            "retentionDays": 30,
+            "includeContentSummary": true
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Query logs:
+
+```bash
+openclaw a2a audit --peer <token_id> --limit 20
+openclaw a2a audit --errors --since 2026-08-01
+openclaw a2a audit --task-id <uuid> --event-type message_sent
+```
 
 ## 🤖 A2A Core Concepts
 

@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, test } from "bun:test";
-import { PLUGIN_ID, buildRootConfigWithA2A, mergeA2AAgentCardConfig, parseA2APluginConfig } from "../src/config.js";
+import {
+    PLUGIN_ID,
+    buildRootConfigWithA2A,
+    mergeA2AAgentCardConfig,
+    parseA2APluginConfig,
+} from "../src/config.js";
 import {
     assertUniqueA2AInboundKeyLabels,
     assertValidA2AInboundKeyLabel,
@@ -434,6 +439,30 @@ describe("parseA2APluginConfig", () => {
                 },
             }),
         ).toThrow('Inbound API key labels must be unique: "alice"');
+    });
+
+    test("parses audit config", () => {
+        expect(
+            parseA2APluginConfig({
+                audit: {
+                    enabled: false,
+                    logDir: "/tmp/a2a-audit",
+                    retentionDays: 14,
+                    includeContentSummary: false,
+                },
+            }).audit,
+        ).toEqual({
+            enabled: false,
+            logDir: "/tmp/a2a-audit",
+            retentionDays: 14,
+            includeContentSummary: false,
+        });
+    });
+
+    test("ignores empty audit.logDir with warning", () => {
+        const warnings: string[] = [];
+        expect(parseA2APluginConfig({ audit: { logDir: "  " } }, warnings).audit).toBeUndefined();
+        expect(warnings.some((w) => w.includes("audit.logDir"))).toBe(true);
     });
 });
 

@@ -12,14 +12,18 @@ import { JSONTaskStore, LocalFileStore } from "@a2anet/a2a-utils";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
+import { createA2AAuditLogger } from "./audit/logger.js";
+import { queryA2AAuditLog } from "./audit/query.js";
+import type { A2AAuditEventType } from "./audit/types.js";
+import { resolveRoditAgentCard } from "./auth/rodit-agent-card.js";
 import {
     type A2AAgentCardConfig,
     type A2AInboundRoditAuthConfig,
     type A2APluginConfig,
+    PLUGIN_ID,
     buildRootConfigWithA2A,
     extractA2AEntry,
     mergeA2AAgentCardConfig,
-    PLUGIN_ID,
     parseA2APluginConfig,
 } from "./config.js";
 import { AgentCardBuilder } from "./inbound/agent-card.js";
@@ -33,17 +37,16 @@ import {
     multiAgentCardPath,
     multiAgentRpcPath,
 } from "./inbound/paths.js";
+import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
+import { OpenClawA2ARequestHandler } from "./inbound/request-handler.js";
 import {
-    createRoditLoginRouteHandlers,
     DEFAULT_RODIT_LOGIN_PATH,
     DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH,
+    createRoditLoginRouteHandlers,
 } from "./inbound/rodit-login-routes.js";
-import { resolveRoditAgentCard } from "./auth/rodit-agent-card.js";
-import { resolvePublicBaseUrl, resolveStartupPublicBaseUrl } from "./inbound/public-url.js";
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
 import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
 import { createOutboundTools } from "./outbound/tools.js";
-import { OpenClawA2ARequestHandler } from "./inbound/request-handler.js";
 import { createUpdateAgentCardTool } from "./tools/update-agent-card.js";
 import {
     assertUniqueA2AInboundKeyLabels,
@@ -192,7 +195,11 @@ function formatStartupError(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
 
-function registerCli(api: OpenClawPluginApi, pluginConfig: A2APluginConfig): void {
+function registerCli(
+    api: OpenClawPluginApi,
+    pluginConfig: A2APluginConfig,
+    auditLogDir: string,
+): void {
     api.registerCli(
         ({ program }) => {
             const a2a = program
@@ -310,6 +317,56 @@ function registerCli(api: OpenClawPluginApi, pluginConfig: A2APluginConfig): voi
                         process.exitCode = 1;
                     }
                 });
+
+            a2a.command("audit")
+                .description("Query structured A2A audit logs (NDJSON)")
+                .option("--event-type <type>", "Filter by event_type")
+                .option("--peer <id>", "Filter by source_agent or target_agent")
+                .option("--task-id <id>", "Filter by task_id")
+                .option("--date <YYYY-MM-DD>", "Only read that UTC day file")
+                .option("--since <iso>", "Only entries at or after this timestamp")
+                .option("--errors", "Only failure/error entries")
+                .option("--limit <n>", "Max entries (default 50)", "50")
+                .action(
+                    async (opts: {
+                        eventType?: string;
+                        peer?: string;
+                        taskId?: string;
+                        date?: string;
+                        since?: string;
+                        errors?: boolean;
+                        limit?: string;
+                    }) => {
+                        try {
+                            if (pluginConfig.audit?.enabled !== true) {
+                                console.log(
+                                    "A2A audit logging is off (set audit.enabled: true to enable).",
+                                );
+                                return;
+                            }
+                            const limit = Number.parseInt(opts.limit ?? "50", 10);
+                            const entries = await queryA2AAuditLog(auditLogDir, {
+                                eventType: opts.eventType as A2AAuditEventType | undefined,
+                                peer: opts.peer,
+                                taskId: opts.taskId,
+                                date: opts.date,
+                                since: opts.since,
+                                errorsOnly: opts.errors === true,
+                                limit: Number.isFinite(limit) ? limit : 50,
+                            });
+                            if (entries.length === 0) {
+                                console.log(`No audit entries in ${auditLogDir}`);
+                                return;
+                            }
+                            console.log(JSON.stringify(entries, null, 2));
+                        } catch (err) {
+                            console.error(
+                                `Failed to query audit logs: ${err instanceof Error ? err.message : String(err)}`,
+                            );
+                            process.exitCode = 1;
+                        }
+                    },
+                );
         },
         {
             descriptors: [
@@ -346,7 +403,10 @@ const a2aPlugin = definePluginEntry({
                 pluginConfig.inbound?.roditLogin?.loginMode ?? "promiscuous";
         }
 
-        registerCli(api, pluginConfig);
+        const stateDir = api.runtime.state.resolveStateDir();
+        const auditLogDir =
+            pluginConfig.audit?.logDir?.trim() || path.join(stateDir, "a2a", "audit");
+        registerCli(api, pluginConfig, auditLogDir);
 
         // Tool descriptors must be registered in `tool-discovery` as well as
         // `full` so the agent runtime can enumerate plugin tools when it
@@ -359,8 +419,17 @@ const a2aPlugin = definePluginEntry({
             return;
         }
 
-        const stateDir = api.runtime.state.resolveStateDir();
         const workspaceDir = api.config.agents?.defaults?.workspace ?? process.cwd();
+        const audit = createA2AAuditLogger({
+            enabled: pluginConfig.audit?.enabled === true,
+            logDir: auditLogDir,
+            retentionDays: pluginConfig.audit?.retentionDays,
+            includeContentSummary: pluginConfig.audit?.includeContentSummary,
+            onWarn: (message) => api.logger.warn(message),
+        });
+        if (audit.enabled) {
+            api.logger.info(`[a2a] Audit logging enabled: ${auditLogDir}`);
+        }
 
         const inboundAgents = pluginConfig.inbound?.agents;
         const isMultiAgentInbound = !!inboundAgents && Object.keys(inboundAgents).length > 0;
@@ -419,9 +488,7 @@ const a2aPlugin = definePluginEntry({
         /** Passport `webhook_url` ingress base (A2A + webhooks); authoritative over config. */
         let passportPublicBaseUrl: string | undefined;
 
-        function resolveEffectivePublicBaseUrl(
-            req?: import("node:http").IncomingMessage,
-        ): string {
+        function resolveEffectivePublicBaseUrl(req?: import("node:http").IncomingMessage): string {
             if (passportPublicBaseUrl) {
                 return passportPublicBaseUrl;
             }
@@ -473,8 +540,7 @@ const a2aPlugin = definePluginEntry({
             : 0;
         const resolvePeersByTokenId =
             outbound?.auth?.provider === "rodit" && outbound.resolvePeersByTokenId !== false;
-        const shouldRegisterOutbound =
-            configuredOutboundAgentCount > 0 || resolvePeersByTokenId;
+        const shouldRegisterOutbound = configuredOutboundAgentCount > 0 || resolvePeersByTokenId;
         if (shouldRegisterOutbound && outbound) {
             if (outbound.auth?.provider === "rodit") {
                 api.logger.info("[a2a] Outbound auth enabled with RODiT P2P JWT login");
@@ -503,6 +569,7 @@ const a2aPlugin = definePluginEntry({
                 viewArtifactCharacterLimit: outbound.viewArtifactCharacterLimit,
                 resolvePeersByTokenId: outbound.resolvePeersByTokenId,
                 persistResolvedPeers: outbound.persistResolvedPeers,
+                audit,
                 onInfo: (message) => api.logger.info(message),
                 onWarn: (message) => api.logger.warn(message),
             });
@@ -633,6 +700,8 @@ const a2aPlugin = definePluginEntry({
                             buildCardFor(runtime, resolveEffectivePublicBaseUrl(req)),
                         requestHandler,
                         auth: authConfig,
+                        audit,
+                        agentId,
                     });
                     runtime.publicUrl = publicUrl;
                     runtime.agentCard = card;
@@ -697,7 +766,7 @@ const a2aPlugin = definePluginEntry({
             const loginPath = roditLogin.loginPath?.trim() || DEFAULT_RODIT_LOGIN_PATH;
             const timestampPath =
                 roditLogin.timestampPath?.trim() || DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH;
-            const loginHandlers = createRoditLoginRouteHandlers(roditLogin);
+            const loginHandlers = createRoditLoginRouteHandlers(roditLogin, { audit });
 
             api.registerHttpRoute({
                 path: timestampPath,
@@ -751,7 +820,8 @@ const a2aPlugin = definePluginEntry({
                 let outboundInitFailures = 0;
 
                 const inboundRodit =
-                    pluginConfig.inbound?.auth?.provider === "rodit" || isRoditLoginEnabled(pluginConfig);
+                    pluginConfig.inbound?.auth?.provider === "rodit" ||
+                    isRoditLoginEnabled(pluginConfig);
                 if (inboundRodit) {
                     try {
                         const resolved = await resolveRoditAgentCard({

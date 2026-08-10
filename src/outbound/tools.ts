@@ -13,11 +13,14 @@ import {
 import type { TSchema } from "@sinclair/typebox";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
+import type { A2AAuditLogger } from "../audit/logger.js";
+import { extractTaskContextIds, summarizeMessageContent } from "../audit/redact.js";
 import { createRoditOutboundAuthProvider } from "../auth/create-rodit-outbound-auth.js";
 import type { A2AAgentEntry, A2AOutboundAuthConfig } from "../config.js";
 import { type AgentTool, jsonResult } from "../types.js";
 import { AuthenticatedA2AAgents } from "./authenticated-agents.js";
 import { createPollingA2ASession } from "./polling-a2a-session.js";
+import { withOutboundAuthRetry } from "./retry.js";
 import { TokenPeerResolver } from "./token-peer-resolver.js";
 import {
     normalizeA2AToolParams,
@@ -25,7 +28,6 @@ import {
     preferTokenIdInToolSchema,
     sanitizeOpenAiToolSchema,
 } from "./tool-params.js";
-import { withOutboundAuthRetry } from "./retry.js";
 
 export type CreateOutboundToolsParams = {
     agents: Record<string, A2AAgentEntry>;
@@ -43,6 +45,7 @@ export type CreateOutboundToolsParams = {
     viewArtifactCharacterLimit?: number;
     resolvePeersByTokenId?: boolean;
     persistResolvedPeers?: boolean;
+    audit?: A2AAuditLogger;
     onInfo?: (message: string) => void;
     onWarn?: (message: string) => void;
 };
@@ -103,6 +106,7 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
     });
 
     const tools = new A2ATools(session, { artifactSettings });
+    const audit = params.audit;
 
     const agentTools = (tools.tools as A2AToolDefinition[]).map((def) => {
         const { $schema: _, ...jsonSchema } = zodToJsonSchema(def.schema, { target: "openAi" });
@@ -114,18 +118,106 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
             description: def.description,
             parameters: jsonSchema as TSchema,
             execute: async (_toolCallId: string, toolParams: Record<string, unknown>) =>
-                withOutboundAuthRetry(authProvider, async () =>
-                    jsonResult(
-                        normalizeA2AToolResult(
-                            (await def.execute(normalizeA2AToolParams(toolParams))) as Record<
-                                string,
-                                unknown
-                            >,
-                        ),
-                    ),
-                ),
+                withOutboundAuthRetry(authProvider, async () => {
+                    const started = Date.now();
+                    const normalized = normalizeA2AToolParams(toolParams);
+                    const peer =
+                        typeof normalized.agentId === "string" ? normalized.agentId : undefined;
+                    try {
+                        const result = normalizeA2AToolResult(
+                            (await def.execute(normalized)) as Record<string, unknown>,
+                        );
+                        logOutboundToolAudit(audit, {
+                            toolName: def.name,
+                            peer,
+                            params: normalized,
+                            result,
+                            durationMs: Date.now() - started,
+                        });
+                        return jsonResult(result);
+                    } catch (err) {
+                        audit?.log({
+                            eventType: "error",
+                            direction: "outbound",
+                            status: "failure",
+                            targetAgent: peer,
+                            tool: `a2a_${def.name}`,
+                            durationMs: Date.now() - started,
+                            error: {
+                                message: err instanceof Error ? err.message : String(err),
+                            },
+                        });
+                        throw err;
+                    }
+                }),
         };
     });
 
     return { tools: agentTools, agents };
+}
+
+function logOutboundToolAudit(
+    audit: A2AAuditLogger | undefined,
+    params: {
+        toolName: string;
+        peer?: string;
+        params: Record<string, unknown>;
+        result: Record<string, unknown>;
+        durationMs: number;
+    },
+): void {
+    if (!audit?.enabled) {
+        return;
+    }
+    const tool = `a2a_${params.toolName}`;
+    const ids = extractTaskContextIds(params.result);
+    const durationMs = params.durationMs;
+
+    if (params.toolName === "send_message") {
+        audit.log({
+            eventType: "message_sent",
+            direction: "outbound",
+            status: "success",
+            targetAgent: params.peer,
+            tool,
+            taskId: ids.taskId,
+            contextId: ids.contextId,
+            contentSummary: summarizeMessageContent(params.params),
+            durationMs,
+        });
+        return;
+    }
+    if (params.toolName === "get_task") {
+        audit.log({
+            eventType: "task_get",
+            direction: "outbound",
+            status: "success",
+            targetAgent: params.peer,
+            tool,
+            taskId:
+                ids.taskId ??
+                (typeof params.params.taskId === "string" ? params.params.taskId : undefined),
+            contextId: ids.contextId,
+            durationMs,
+        });
+        return;
+    }
+    if (params.toolName === "get_agent" || params.toolName === "get_agents") {
+        audit.log({
+            eventType: "agent_discovered",
+            direction: "outbound",
+            status: "success",
+            targetAgent: params.peer,
+            tool,
+            durationMs,
+            metadata:
+                params.toolName === "get_agents"
+                    ? {
+                          agent_count: Array.isArray(params.result.agents)
+                              ? params.result.agents.length
+                              : undefined,
+                      }
+                    : undefined,
+        });
+    }
 }

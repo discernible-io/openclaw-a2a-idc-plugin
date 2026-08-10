@@ -2,7 +2,7 @@
     "id": "identyclaw-a2a",
     "name": "OpenClaw A2A Plugin",
     "description": "A2A peer messaging with RODiT / Passport JWT authentication",
-    "version": "0.4.10",
+    "version": "0.4.11",
     "activation": {
         "onStartup": true
     },
@@ -93,6 +93,26 @@
         "inbound.publicBaseUrl": {
             "label": "Public Base URL",
             "help": "External base URL for Agent Card discovery (overrides request Host and proxy headers)"
+        },
+        "audit": {
+            "label": "Audit Logging",
+            "help": "Structured NDJSON audit logs for inbound/outbound A2A and RODiT login events"
+        },
+        "audit.enabled": {
+            "label": "Enable Audit",
+            "help": "Write daily a2a-audit-YYYY-MM-DD.jsonl files (default false; opt-in)"
+        },
+        "audit.logDir": {
+            "label": "Audit Log Directory",
+            "help": "Directory for audit JSONL files (default stateDir/a2a/audit)"
+        },
+        "audit.retentionDays": {
+            "label": "Audit Retention Days",
+            "help": "Delete rotated audit files older than this many days (default 30)"
+        },
+        "audit.includeContentSummary": {
+            "label": "Include Content Summary",
+            "help": "Store a truncated text summary of messages (JWTs never logged)"
         }
     },
     "configSchema": {
@@ -152,6 +172,28 @@
             }
         },
         "properties": {
+            "audit": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Write structured A2A audit logs (default false; opt-in)"
+                    },
+                    "logDir": {
+                        "type": "string",
+                        "description": "Directory for daily a2a-audit-YYYY-MM-DD.jsonl files (default stateDir/a2a/audit)"
+                    },
+                    "retentionDays": {
+                        "type": "number",
+                        "description": "Delete rotated audit files older than this many days (default 30)"
+                    },
+                    "includeContentSummary": {
+                        "type": "boolean",
+                        "description": "Include truncated message text summaries (never JWTs; default true)"
+                    }
+                }
+            },
             "outbound": {
                 "type": "object",
                 "additionalProperties": false,

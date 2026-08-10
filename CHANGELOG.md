@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.4.11 — 2026-08-10
+
+- Add structured A2A audit logging (opt-in via `audit.enabled: true`; daily NDJSON under `stateDir/a2a/audit`) for inbound `/a2a`, Agent Card discovery, RODiT `/api/login`, and outbound tools; JWTs and secret-looking fields are never written.
+- Add `audit` plugin config (`enabled`, `logDir`, `retentionDays`, `includeContentSummary`) and `openclaw a2a audit` CLI query (`--event-type`, `--peer`, `--task-id`, `--date`, `--since`, `--errors`, `--limit`).
+
 ## 0.4.10 — 2026-08-07
 
 - Keep `outbound.tlsSkipVerify` for self-signed Passport peer gateways (common for IdentyClaw holders); document that it stays opt-in and logs a warning when enabled.
