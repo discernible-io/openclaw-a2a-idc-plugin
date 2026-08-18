@@ -5,9 +5,10 @@
 import { getRoditOwnConfig } from "./rodit-own-config.js";
 import { defaultRoditPeerLogin } from "./rodit-peer-login.js";
 
-const DEFAULT_IDENTITY_API_BASE_URL = "https://api.identyclaw.com";
 const DEFAULT_JWT_CACHE_TTL_SECONDS = 300;
 const JWT_REFRESH_SKEW_MS = 60_000;
+export const IDENTITY_API_BASE_URL_ERROR =
+    "Identity API base URL is not configured. Set outbound.identityApiBaseUrl, IDENTYCLAW_BASE_URL, or Passport metadata.subjectuniqueidentifier_url.";
 
 type CachedJwt = {
     token: string;
@@ -61,8 +62,17 @@ export function resetIdentyclawApiClientCacheForTests(): void {
     jwtCache = null;
 }
 
-export async function resolveIdentityApiBaseUrl(override?: string): Promise<string> {
-    const configured = override?.trim() || process.env.IDENTYCLAW_BASE_URL?.trim();
+export type ResolveIdentityApiBaseUrlDeps = {
+    getRoditOwnConfig?: typeof getRoditOwnConfig;
+};
+
+export async function resolveIdentityApiBaseUrl(
+    override?: string,
+    deps: ResolveIdentityApiBaseUrlDeps = {},
+): Promise<string> {
+    const fromOverride = override?.trim();
+    const fromEnv = process.env.IDENTYCLAW_BASE_URL?.trim();
+    const configured = fromOverride || fromEnv;
     if (configured) {
         return normalizeIdentityApiBaseUrl(configured);
     }
@@ -71,9 +81,19 @@ export async function resolveIdentityApiBaseUrl(override?: string): Promise<stri
         return cachedApiBaseUrl;
     }
 
-    const ownConfig = await getRoditOwnConfig();
-    const fromMetadata = ownConfig.own_rodit.metadata.subjectuniqueidentifier_url?.trim();
-    cachedApiBaseUrl = normalizeIdentityApiBaseUrl(fromMetadata || DEFAULT_IDENTITY_API_BASE_URL);
+    const loadOwnConfig = deps.getRoditOwnConfig ?? getRoditOwnConfig;
+    let fromMetadata: string | undefined;
+    try {
+        const ownConfig = await loadOwnConfig();
+        fromMetadata = ownConfig.own_rodit.metadata.subjectuniqueidentifier_url?.trim();
+    } catch {
+        fromMetadata = undefined;
+    }
+    if (!fromMetadata) {
+        throw new Error(IDENTITY_API_BASE_URL_ERROR);
+    }
+
+    cachedApiBaseUrl = normalizeIdentityApiBaseUrl(fromMetadata);
     return cachedApiBaseUrl;
 }
 

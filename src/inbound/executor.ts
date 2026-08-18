@@ -24,6 +24,8 @@ import { dispatchInboundReplyWithBase } from "openclaw/plugin-sdk/inbound-reply-
 import { resolveOutboundMediaUrls } from "openclaw/plugin-sdk/reply-payload";
 import { resolveThreadSessionKeys } from "openclaw/plugin-sdk/routing";
 
+import { type A2AHostLogger, toLogError } from "../log.js";
+
 const CHANNEL_ID = "a2a";
 const ANONYMOUS_SENDER_LABEL = "anonymous";
 const DEFAULT_CLIENT_ERROR_MESSAGE = "Something went wrong.";
@@ -48,6 +50,7 @@ export type OpenClawExecutorParams = {
     fileStore?: FileStore | null;
     taskStore?: TaskStore;
     workspaceDir: string;
+    logger?: A2AHostLogger;
 };
 
 /**
@@ -60,6 +63,7 @@ export class OpenClawExecutor implements AgentExecutor {
     private config: OpenClawConfig;
     private fileStore: FileStore | null;
     private taskStore?: TaskStore;
+    private logger?: A2AHostLogger;
 
     private static isAbortLikeError(err: unknown): boolean {
         if (!(err instanceof Error)) {
@@ -116,6 +120,7 @@ export class OpenClawExecutor implements AgentExecutor {
                 : (params.fileStore ??
                   new LocalFileStore(path.join(params.workspaceDir, "a2a", "inbound", "files")));
         this.taskStore = params.taskStore;
+        this.logger = params.logger;
     }
 
     private publishFinalStatusUpdate(params: {
@@ -303,11 +308,18 @@ export class OpenClawExecutor implements AgentExecutor {
                     }
                 },
                 onRecordError: (err: unknown) => {
-                    console.error(`[a2a] failed recording inbound session: ${String(err)}`);
+                    this.logger?.error("Failed recording inbound session", {
+                        operation: "inbound.execute.record",
+                        error: toLogError(err),
+                    });
                 },
                 onDispatchError: (err: unknown, info: { kind: string }) => {
                     dispatchError ??= err;
-                    console.error(`[a2a] failed dispatching ${info.kind} reply: ${String(err)}`);
+                    this.logger?.error("Failed dispatching inbound reply", {
+                        operation: "inbound.execute.dispatch",
+                        kind: info.kind,
+                        error: toLogError(err),
+                    });
                 },
                 replyOptions: { abortSignal: abortController.signal },
             });
@@ -353,7 +365,11 @@ export class OpenClawExecutor implements AgentExecutor {
             if (abortController.signal.aborted) {
                 return;
             }
-            console.error(`[a2a] task ${taskId} failed`, err);
+            this.logger?.error("Inbound task failed", {
+                operation: "inbound.execute",
+                taskId,
+                error: toLogError(err),
+            });
             this.publishFinalStatusUpdate({
                 eventBus,
                 taskId,

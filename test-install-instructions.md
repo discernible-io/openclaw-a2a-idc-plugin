@@ -31,7 +31,7 @@ https://agent-a.example.com         https://agent-b.example.com
 | Plugin install | Local path or git URL | Same |
 | Passport creds | This host only | This host only |
 | `inbound.publicBaseUrl` | `https://agent-a.example.com` | `https://agent-b.example.com` |
-| `inbound.auth.audience` | Public hostname peers use | Public hostname peers use |
+| `inbound.auth.audience` | Own passport `owner_id` (JWT `aud`) | Own passport `owner_id` (JWT `aud`) |
 | `outbound.agents` | Remote URL → agent-b | Remote URL → agent-a |
 
 ---
@@ -110,7 +110,7 @@ curl -sf https://agent-b.example.com/.well-known/agent-card.json
 {
   "plugins": {
     "entries": {
-      "a2a": {
+      "identyclaw-a2a": {
         "enabled": true,
         "config": {
           "inbound": {
@@ -118,7 +118,7 @@ curl -sf https://agent-b.example.com/.well-known/agent-card.json
             "auth": {
               "provider": "rodit",
               "issuer": "https://api.identyclaw.com",
-              "audience": "agent-a.example.com",
+              "audience": "<own passport owner_id>",
               "identityClaim": "token_id"
             },
             "agentCard": {
@@ -152,7 +152,7 @@ curl -sf https://agent-b.example.com/.well-known/agent-card.json
   "auth": {
     "provider": "rodit",
     "issuer": "https://api.identyclaw.com",
-    "audience": "agent-b.example.com",
+    "audience": "<own passport owner_id>",
     "identityClaim": "token_id"
   },
   "agentCard": {
@@ -178,7 +178,7 @@ curl -sf https://agent-b.example.com/.well-known/agent-card.json
 | Field | Must match |
 | ----- | ---------- |
 | `inbound.publicBaseUrl` | Public origin peers use to call this agent |
-| `inbound.auth.audience` | JWT `aud` from IdentyClaw login — set `AGENT_*_A2A_AUDIENCE` when it differs from `publicBaseUrl` |
+| `inbound.auth.audience` | Own passport `owner_id` — JWT `aud` from P2P `/api/login`. Set `AGENT_*_A2A_AUDIENCE` when bootstrap cannot probe it |
 | `outbound.agents.<id>.url` | Remote peer's **public** Agent Card URL |
 
 If `audience` does not match the live JWT `aud`, every inbound A2A request returns **401**. See [`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md).
@@ -324,7 +324,7 @@ Alternatively, RODiT with API key fallback:
   "auth": {
     "provider": "rodit",
     "issuer": "https://api.identyclaw.com",
-    "audience": "agent-a.example.com",
+    "audience": "<own passport owner_id>",
     "allowApiKeyFallback": true
   },
   "apiKeys": [{ "label": "dev-peer", "key": "…" }]
@@ -349,7 +349,7 @@ Same-host `./identyclaw.sh test-a2a` does not satisfy this gate. See [Step 5 —
 
 | Symptom | Likely cause |
 | ------- | ------------ |
-| 401 on all inbound A2A | `auth.audience` ≠ JWT `aud` or ≠ public hostname |
+| 401 on all inbound A2A | `auth.audience` ≠ JWT `aud` (own passport `owner_id`; not `publicBaseUrl`) |
 | Agent Card shows wrong URL | Missing or wrong `inbound.publicBaseUrl` behind proxy |
 | Outbound cannot reach peer | `outbound.agents` still uses `http://openclaw-agent-b:18789/...` (container DNS) |
 | Outbound login fails | Wrong or missing Passport credentials on that host |

@@ -24,7 +24,7 @@ describe("authenticateInboundRequest", () => {
             required: false,
             mode: "apiKey",
         });
-        expect(result).toEqual({ ok: true, identity: "anonymous" });
+        expect(result).toEqual({ ok: true, identity: "anonymous", authMode: "anonymous" });
     });
 
     test("accepts valid API key", async () => {
@@ -33,7 +33,7 @@ describe("authenticateInboundRequest", () => {
             mode: "apiKey",
             validKeys: [{ label: "peer-a", key: "abc123" }],
         });
-        expect(result).toEqual({ ok: true, identity: "peer-a" });
+        expect(result).toEqual({ ok: true, identity: "peer-a", authMode: "apiKey" });
     });
 
     test("rejects missing API key", async () => {
@@ -42,7 +42,11 @@ describe("authenticateInboundRequest", () => {
             mode: "apiKey",
             validKeys: [{ label: "peer-a", key: "abc123" }],
         });
-        expect(result).toEqual({ ok: false, error: "Authentication required" });
+        expect(result).toEqual({
+            ok: false,
+            error: "Authentication required",
+            reason: "missing_key",
+        });
     });
 
     test("accepts valid RODiT JWT", async () => {
@@ -60,7 +64,7 @@ describe("authenticateInboundRequest", () => {
             },
             { roditJwtValidator: validateJwt },
         );
-        expect(result).toEqual({ ok: true, identity: "peer-jwt" });
+        expect(result).toEqual({ ok: true, identity: "peer-jwt", authMode: "rodit" });
     });
 
     test("rejects expired or invalid RODiT JWT", async () => {
@@ -75,7 +79,11 @@ describe("authenticateInboundRequest", () => {
             },
             { roditJwtValidator: validateJwt },
         );
-        expect(result).toEqual({ ok: false, error: "Authentication required" });
+        expect(result).toEqual({
+            ok: false,
+            error: "Authentication required",
+            reason: "invalid_token",
+        });
     });
 
     test("falls back to API key when configured", async () => {
@@ -92,6 +100,6 @@ describe("authenticateInboundRequest", () => {
             },
             { roditJwtValidator: validateJwt },
         );
-        expect(result).toEqual({ ok: true, identity: "dev-key" });
+        expect(result).toEqual({ ok: true, identity: "dev-key", authMode: "apiKey" });
     });
 });

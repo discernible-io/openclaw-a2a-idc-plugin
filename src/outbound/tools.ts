@@ -45,6 +45,7 @@ export type CreateOutboundToolsParams = {
     viewArtifactCharacterLimit?: number;
     resolvePeersByTokenId?: boolean;
     persistResolvedPeers?: boolean;
+    identityApiBaseUrl?: string;
     audit?: A2AAuditLogger;
     onInfo?: (message: string) => void;
     onWarn?: (message: string) => void;
@@ -71,6 +72,7 @@ export function createOutboundTools(params: CreateOutboundToolsParams): CreateOu
               stateDir: params.stateDir,
               persist: params.persistResolvedPeers === true,
               logLevel: params.auth?.logLevel,
+              identityApiBaseUrl: params.identityApiBaseUrl,
               onInfo: params.onInfo,
               onWarn: params.onWarn,
           })

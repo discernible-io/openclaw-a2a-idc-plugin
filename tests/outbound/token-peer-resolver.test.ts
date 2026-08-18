@@ -58,9 +58,11 @@ describe("TokenPeerResolver", () => {
     test("falls back to chain when API has no metadata.webhook_url", async () => {
         const tokenId = "fallbackabcd";
         let chainFetchCount = 0;
+        const warnings: string[] = [];
 
         const resolver = new TokenPeerResolver({
             stateDir: tmpDir(),
+            onWarn: (message) => warnings.push(message),
             fetchIdentityFullFn: async () => ({ tokenId, metadata: {} }),
             fetchPeerRoditByTokenIdFn: async (id) => {
                 chainFetchCount += 1;
@@ -75,12 +77,18 @@ describe("TokenPeerResolver", () => {
         const cardUrl = await resolver.resolveAgentCardUrl(tokenId);
         expect(cardUrl).toBe("https://chain.peer.example.com/.well-known/agent-card.json");
         expect(chainFetchCount).toBe(1);
+        expect(
+            warnings.some((line) => line.includes("API GET /full had no metadata.webhook_url")),
+        ).toBe(true);
+        expect(warnings.some((line) => line.includes('"chosenSource":"chain"'))).toBe(true);
     });
 
     test("falls back to chain when API request fails", async () => {
         const tokenId = "apierrorabcd";
+        const warnings: string[] = [];
         const resolver = new TokenPeerResolver({
             stateDir: tmpDir(),
+            onWarn: (message) => warnings.push(message),
             fetchIdentityFullFn: async () => {
                 throw new Error("GET /full failed: HTTP 503");
             },
@@ -92,6 +100,9 @@ describe("TokenPeerResolver", () => {
 
         const cardUrl = await resolver.resolveAgentCardUrl(tokenId);
         expect(cardUrl).toBe("https://chain.after-error.example.com/.well-known/agent-card.json");
+        expect(warnings.some((line) => line.includes('"failedSource":"api"'))).toBe(true);
+        expect(warnings.some((line) => line.includes('"chosenSource":"chain"'))).toBe(true);
+        expect(warnings.some((line) => line.includes("GET /full failed: HTTP 503"))).toBe(true);
     });
 
     test("resolves token_id via on-chain webhook_url when API is not injected", async () => {

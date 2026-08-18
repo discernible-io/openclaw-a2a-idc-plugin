@@ -166,6 +166,13 @@ describe("handleJsonRpc", () => {
         const res = makeRes();
         await handlers.handleJsonRpc(req, res);
         expect(res.getStatusCode()).toBe(401);
+        const body = res.getJson() as {
+            error?: { code?: number; data?: { reason?: string; requestId?: string } };
+        };
+        expect(body.error?.code).toBe(-32001);
+        expect(body.error?.data?.reason).toBe("missing_key");
+        expect(body.error?.data?.requestId).toBeTruthy();
+        expect(res.getHeaders()["X-Request-Id"]).toBe(body.error?.data?.requestId);
     });
 
     test("accepts authenticated requests", async () => {
@@ -412,6 +419,11 @@ describe("handleJsonRpc", () => {
             makeRes(),
         );
         expect(events.some((e) => e.eventType === "auth_failure")).toBe(true);
+        const failure = events.find((e) => e.eventType === "auth_failure");
+        expect(failure?.error).toEqual({
+            code: "missing_key",
+            message: "Authentication required",
+        });
 
         events.length = 0;
         const auth = new A2AHttpHandlers({
@@ -438,6 +450,8 @@ describe("handleJsonRpc", () => {
         );
         expect(events.some((e) => e.eventType === "auth_success")).toBe(true);
         expect(events.some((e) => e.eventType === "message_received")).toBe(true);
+        const success = events.find((e) => e.eventType === "auth_success");
+        expect((success?.metadata as { auth_mode?: string } | undefined)?.auth_mode).toBe("apiKey");
         const received = events.find((e) => e.eventType === "message_received");
         expect(received?.sourceAgent).toBe("test");
         expect(String(received?.contentSummary)).toContain("ping");

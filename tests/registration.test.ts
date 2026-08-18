@@ -52,6 +52,10 @@ class FakeCommand {
         return this;
     }
 
+    option(_flags: string, _description?: string, _defaultValue?: string) {
+        return this;
+    }
+
     action(handler: (...args: string[]) => unknown | Promise<unknown>) {
         this.actionHandler = handler;
         return this;
@@ -357,7 +361,7 @@ describe("plugin registration", () => {
         api.runtime.config.loadConfig = () => ({
             plugins: {
                 entries: {
-                    a2a: {
+                    "identyclaw-a2a": {
                         config: {
                             inbound: {
                                 apiKeys: [
@@ -390,7 +394,7 @@ describe("plugin registration", () => {
         expect(writeConfigFile.mock.calls[0]?.[0]).toEqual({
             plugins: {
                 entries: {
-                    a2a: {
+                    "identyclaw-a2a": {
                         config: {
                             inbound: {
                                 apiKeys: [{ label: "Bob", key: "secret-2" }],

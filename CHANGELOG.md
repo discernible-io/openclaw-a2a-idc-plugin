@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Log API→chain peer resolution with failed source, error, and chosen source; record `auth_success.metadata.auth_mode` (`rodit` vs API-key fallback).
+- Replace runtime `console.error` with the host logger; include `component: "A2A"` and a request correlation id on `/a2a` and `/api/login`.
+- Add `requestId` and `timestamp` to REST login errors; keep JSON-RPC on `/a2a` and put the auth `reason` in `error.data`.
+- Require an explicit identity API base (`outbound.identityApiBaseUrl`, `IDENTYCLAW_BASE_URL`, or Passport `subjectuniqueidentifier_url`) instead of defaulting to `https://api.identyclaw.com`.
+- Index [`test-install-instructions.md`](test-install-instructions.md) from `README.md`; correct plugin id and audience in JWT docs; refresh [`UPSTREAM.md`](UPSTREAM.md).
+
 ## 0.4.11 — 2026-08-10
 
 - Add structured A2A audit logging (opt-in via `audit.enabled: true`; daily NDJSON under `stateDir/a2a/audit`) for inbound `/a2a`, Agent Card discovery, RODiT `/api/login`, and outbound tools; JWTs and secret-looking fields are never written.

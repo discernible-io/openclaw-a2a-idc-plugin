@@ -26,7 +26,7 @@ For A2A with RODiT, the **receiving agent** configures the expected value in `op
 ```json
 "plugins": {
   "entries": {
-    "a2a": {
+    "identyclaw-a2a": {
       "config": {
         "inbound": {
           "auth": {

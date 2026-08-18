@@ -12,6 +12,7 @@ import {
 } from "../auth/identyclaw-api-client.js";
 import { isPassportTokenId, normalizePassportTokenId } from "../auth/passport-token-id.js";
 import { type PeerRodit, fetchPeerRoditByTokenId } from "../auth/rodit-peer-by-token-id.js";
+import { formatA2ALog } from "../log.js";
 import type { AuthenticatedA2AAgents } from "./authenticated-agents.js";
 
 type PeerResolutionSource = "api" | "chain";
@@ -29,6 +30,7 @@ export type TokenPeerResolverOptions = {
     stateDir: string;
     persist?: boolean;
     logLevel?: string;
+    identityApiBaseUrl?: string;
     onInfo?: (message: string) => void;
     onWarn?: (message: string) => void;
     fetchIdentityFullFn?: typeof fetchTokenIdentityFull;
@@ -133,18 +135,34 @@ export class TokenPeerResolver {
     private async resolveAndRegister(tokenId: string): Promise<string | null> {
         let cardUrl: string | null = null;
         let source: PeerResolutionSource = "api";
+        let apiFailure: { reason: string } | undefined;
 
         try {
             const identity = await this.fetchIdentityFull(tokenId, {
                 logLevel: this.options.logLevel,
+                identityApiBaseUrl: this.options.identityApiBaseUrl,
             });
             cardUrl = this.agentCardUrlFromIdentity(identity);
-        } catch {
-            // API errors fall through to on-chain lookup.
+            if (!cardUrl) {
+                apiFailure = { reason: "API GET /full had no metadata.webhook_url" };
+            }
+        } catch (err) {
+            apiFailure = {
+                reason: err instanceof Error ? err.message : String(err),
+            };
         }
 
         if (!cardUrl) {
             source = "chain";
+            this.options.onWarn?.(
+                formatA2ALog("Peer resolution fallback", {
+                    operation: "outbound.peer_resolve",
+                    tokenId,
+                    failedSource: "api",
+                    error: { message: apiFailure?.reason ?? "unknown API failure" },
+                    chosenSource: "chain",
+                }),
+            );
             const peerRodit = await this.fetchPeerRodit(tokenId, {
                 logLevel: this.options.logLevel,
             });
@@ -196,7 +214,13 @@ export class TokenPeerResolver {
                     ? "on-chain RODiT metadata.webhook_url"
                     : "IdentyClaw API /full metadata.webhook_url";
             this.options.onInfo?.(
-                `[a2a] Registered outbound peer ${normalized} from ${sourceLabel} (${cardUrl})`,
+                formatA2ALog("Registered outbound peer", {
+                    operation: "outbound.peer_resolve",
+                    tokenId: normalized,
+                    chosenSource: opts.source ?? "api",
+                    sourceLabel,
+                    cardUrl,
+                }),
             );
         }
     }

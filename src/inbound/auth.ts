@@ -56,18 +56,42 @@ export function validateApiKey(req: IncomingMessage, validKeys: A2AInboundKey[])
     return { ok: false, reason: "invalid_key" };
 }
 
+export type A2AAuthErrorDetails = {
+    reason?: string;
+    requestId?: string;
+};
+
 /**
  * Send a 401 JSON-RPC error with WWW-Authenticate header.
+ * `error.data.reason` is the machine-readable auth failure; `message` stays JSON-RPC-safe.
  */
-export function sendAuthError(res: ServerResponse, message: string): void {
+export function sendAuthError(
+    res: ServerResponse,
+    message: string,
+    details: A2AAuthErrorDetails = {},
+): void {
     res.statusCode = 401;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("WWW-Authenticate", 'Bearer realm="a2a"');
+    if (details.requestId) {
+        res.setHeader("X-Request-Id", details.requestId);
+    }
+    const data: Record<string, string> = {};
+    if (details.reason) {
+        data.reason = details.reason;
+    }
+    if (details.requestId) {
+        data.requestId = details.requestId;
+    }
     res.end(
         JSON.stringify({
             jsonrpc: "2.0",
             id: null,
-            error: { code: -32001, message },
+            error: {
+                code: -32001,
+                message,
+                ...(Object.keys(data).length > 0 ? { data } : {}),
+            },
         }),
     );
 }

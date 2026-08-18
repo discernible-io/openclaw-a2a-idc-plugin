@@ -102,7 +102,7 @@ Outbound P2P login uses the NEAR Passport credentials file ([gennearaccount](htt
 | `NEAR_CREDENTIALS_FILE_PATH` | Path to Passport JSON, e.g. `…/secrets/near-credentials/<hash>.json` |
 | `NEAR_CONTRACT_ID` | RODiT contract on mainnet (e.g. `genaaaa-identyclaw-com.near`) |
 
-`IDENTYCLAW_*` env vars remain used by **identyclaw-tools** (HOLA, DID, identity) on the same host — they are not required for A2A outbound JWT login.
+`IDENTYCLAW_*` env vars remain used by **identyclaw-tools** (HOLA, DID, identity) on the same host. This plugin uses `IDENTYCLAW_BASE_URL` (or `outbound.identityApiBaseUrl` / Passport `subjectuniqueidentifier_url`) only for identity-API peer resolution — it does not default to `https://api.identyclaw.com`.
 
 Outbound login calls `login_server` against each peer's `/api/login` (with `subjectuniqueidentifier_url` set to that peer's gateway base). JWTs are cached **per outbound peer** and scoped to that receiver's `aud`.
 
@@ -159,10 +159,11 @@ Configure the remote agent's Agent Card URL and enable dynamic JWT login. Do **n
 | `auth.peerTimestampPath` | `string` | `/api/login/timestamp` | Timestamp challenge path on the peer gateway |
 | `resolvePeersByTokenId` | `boolean` | `true` (with `auth.provider: "rodit"`) | Resolve unknown Passport `token_id` peers via IdentyClaw API `/full`, then on-chain `metadata.webhook_url` fallback |
 | `persistResolvedPeers` | `boolean` | `false` | Persist resolved peers to `stateDir/a2a/outbound/peers.json` |
+| `identityApiBaseUrl` | `string` | — | IdentyClaw identity API base for `GET /full` peer lookup. Also `IDENTYCLAW_BASE_URL` or Passport `subjectuniqueidentifier_url`. No hardcoded default. |
 | `auth.logLevel` | `string` | `error` | Winston level for `rodit-auth-be` when loaded |
 | `agents.*.loginBaseUrl` | `string` | derived from Agent Card URL | Override P2P login target when it differs from the card origin |
 
-When `resolvePeersByTokenId` is enabled, `a2a_send_message` can target a bare Passport `token_id` not listed in `outbound.agents`. The plugin tries `GET /api/identity/token/{tokenId}/full` (authenticated with your NEAR creds), reads **`metadata.webhook_url`**, and falls back to NEAR chain lookup (`nearorg_rpc_tokenfromroditid`) when the API is unavailable or has no webhook. It then registers `{webhook_url}/.well-known/agent-card.json` before normal P2P login. DN `contactUri` is **not** used for A2A discovery — it is identity contact metadata (often `email:…`). Use `identyclaw_get_agent_identity` when you need DN traits.
+When `resolvePeersByTokenId` is enabled, `a2a_send_message` can target a bare Passport `token_id` not listed in `outbound.agents`. The plugin tries `GET /api/identity/token/{tokenId}/full` (authenticated with your NEAR creds), reads **`metadata.webhook_url`**, and falls back to NEAR chain lookup (`nearorg_rpc_tokenfromroditid`) when the API is unavailable or has no webhook. API→chain fallback is logged with the failed source, error, and chosen source. The identity API base must come from `outbound.identityApiBaseUrl`, `IDENTYCLAW_BASE_URL`, or Passport `subjectuniqueidentifier_url` — there is no hardcoded `api.identyclaw.com` default. It then registers `{webhook_url}/.well-known/agent-card.json` before normal P2P login. DN `contactUri` is **not** used for A2A discovery — it is identity contact metadata (often `email:…`). Use `identyclaw_get_agent_identity` when you need DN traits.
 
 **Peer identity:** key `outbound.agents` by Passport `token_id` (recommended). The `a2a_*` tools expose and accept `token_id` for peers; legacy config aliases without a Passport token (e.g. dev self-loop `self`) use `agent_id` instead.
 
@@ -414,6 +415,7 @@ exposure needed.
 | `agents.*.loginBaseUrl`       | `string`                                 | derived | Override P2P login base when it differs from the Agent Card origin. |
 | `resolvePeersByTokenId`       | `boolean`                                | `true` with RODiT auth | Resolve unknown peers via API `/full`, then on-chain `metadata.webhook_url`. |
 | `persistResolvedPeers`        | `boolean`                                | `false` | Persist resolved peers under `stateDir/a2a/outbound/peers.json`. |
+| `identityApiBaseUrl`          | `string`                                 | —       | IdentyClaw identity API base for `GET /full` peer lookup. Also `IDENTYCLAW_BASE_URL` or Passport `subjectuniqueidentifier_url`. No hardcoded default. |
 
 ### Tools
 
@@ -808,6 +810,8 @@ See [PUBLISH.md](./PUBLISH.md):
 npm run publish:clawhub:dry-run
 npm run publish:clawhub
 ```
+
+Two-host smoke install: [`test-install-instructions.md`](test-install-instructions.md). JWT `aud` vs `inbound.auth.audience`: [`docs/jwt-audience-alignment.md`](docs/jwt-audience-alignment.md). Upstream pin: [`UPSTREAM.md`](UPSTREAM.md). Fork plan: [`a2afork.md`](a2afork.md).
 
 ---
 

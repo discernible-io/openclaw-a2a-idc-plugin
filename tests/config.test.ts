@@ -144,6 +144,13 @@ describe("parseA2APluginConfig", () => {
         expect(result.outbound?.fileStore).toBe(false);
     });
 
+    test("parses outbound identityApiBaseUrl", () => {
+        const result = parseA2APluginConfig({
+            outbound: { identityApiBaseUrl: "  https://api.dihola.io  " },
+        });
+        expect(result.outbound?.identityApiBaseUrl).toBe("https://api.dihola.io");
+    });
+
     test("ignores invalid numeric options", () => {
         const result = parseA2APluginConfig({
             outbound: {

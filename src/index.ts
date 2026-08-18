@@ -44,6 +44,7 @@ import {
     DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH,
     createRoditLoginRouteHandlers,
 } from "./inbound/rodit-login-routes.js";
+import { createA2AHostLogger } from "./log.js";
 import type { AuthenticatedA2AAgents } from "./outbound/authenticated-agents.js";
 import { configureOutboundTlsSkipVerify } from "./outbound/tls-fetch.js";
 import { createOutboundTools } from "./outbound/tools.js";
@@ -403,10 +404,8 @@ const a2aPlugin = definePluginEntry({
                 pluginConfig.inbound?.roditLogin?.loginMode ?? "promiscuous";
         }
 
-        const stateDir = api.runtime.state.resolveStateDir();
-        const auditLogDir =
-            pluginConfig.audit?.logDir?.trim() || path.join(stateDir, "a2a", "audit");
-        registerCli(api, pluginConfig, auditLogDir);
+        const registrationMode = api.registrationMode as string;
+        const configuredAuditLogDir = pluginConfig.audit?.logDir?.trim();
 
         // Tool descriptors must be registered in `tool-discovery` as well as
         // `full` so the agent runtime can enumerate plugin tools when it
@@ -414,12 +413,17 @@ const a2aPlugin = definePluginEntry({
         // services, reload) requires the live gateway and stays in `full`.
         // `tool-discovery` is widened in newer SDKs than this plugin's
         // declared peer range, hence the cast.
-        const registrationMode = api.registrationMode as string;
         if (registrationMode !== "full" && registrationMode !== "tool-discovery") {
+            registerCli(api, pluginConfig, configuredAuditLogDir ?? "");
             return;
         }
 
+        const stateDir = api.runtime.state.resolveStateDir();
+        const auditLogDir = configuredAuditLogDir || path.join(stateDir, "a2a", "audit");
+        registerCli(api, pluginConfig, auditLogDir);
+
         const workspaceDir = api.config.agents?.defaults?.workspace ?? process.cwd();
+        const a2aLogger = createA2AHostLogger(api.logger);
         const audit = createA2AAuditLogger({
             enabled: pluginConfig.audit?.enabled === true,
             logDir: auditLogDir,
@@ -569,6 +573,7 @@ const a2aPlugin = definePluginEntry({
                 viewArtifactCharacterLimit: outbound.viewArtifactCharacterLimit,
                 resolvePeersByTokenId: outbound.resolvePeersByTokenId,
                 persistResolvedPeers: outbound.persistResolvedPeers,
+                identityApiBaseUrl: outbound.identityApiBaseUrl,
                 audit,
                 onInfo: (message) => api.logger.info(message),
                 onWarn: (message) => api.logger.warn(message),
@@ -689,6 +694,7 @@ const a2aPlugin = definePluginEntry({
                         fileStore,
                         taskStore,
                         workspaceDir,
+                        logger: a2aLogger,
                     });
 
                     const requestHandler = new OpenClawA2ARequestHandler(
@@ -701,6 +707,7 @@ const a2aPlugin = definePluginEntry({
                         requestHandler,
                         auth: authConfig,
                         audit,
+                        logger: a2aLogger,
                         agentId,
                     });
                     runtime.publicUrl = publicUrl;
@@ -766,20 +773,15 @@ const a2aPlugin = definePluginEntry({
             const loginPath = roditLogin.loginPath?.trim() || DEFAULT_RODIT_LOGIN_PATH;
             const timestampPath =
                 roditLogin.timestampPath?.trim() || DEFAULT_RODIT_LOGIN_TIMESTAMP_PATH;
-            const loginHandlers = createRoditLoginRouteHandlers(roditLogin, { audit });
+            const loginHandlers = createRoditLoginRouteHandlers(roditLogin, {
+                audit,
+                logger: a2aLogger,
+            });
 
             api.registerHttpRoute({
                 path: timestampPath,
                 auth: "plugin",
-                handler: async (req, res) => {
-                    if (req.method !== "GET") {
-                        res.setHeader("Allow", "GET");
-                        res.statusCode = 405;
-                        res.end("Method Not Allowed");
-                        return;
-                    }
-                    await loginHandlers.handleLoginTimestamp(req, res);
-                },
+                handler: loginHandlers.handleLoginTimestamp,
             });
 
             api.registerHttpRoute({

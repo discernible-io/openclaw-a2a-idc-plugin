@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { Message } from "@a2a-js/sdk";
 import type { ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
 
@@ -34,6 +34,14 @@ function makeEventBus() {
         }),
         finished: mock(() => {}),
     } as unknown as ExecutionEventBus & { events: unknown[] };
+}
+
+function makeLogger() {
+    return {
+        info: mock((_message: string) => {}),
+        warn: mock((_message: string) => {}),
+        error: mock((_message: string) => {}),
+    };
 }
 
 function makeRuntime(options?: {
@@ -244,75 +252,69 @@ describe("OpenClawExecutor", () => {
     });
 
     test("publishes failed status when dispatch reports an error", async () => {
-        const errorSpy = spyOn(console, "error").mockImplementation(() => {});
-        try {
-            const runtime = makeRuntime({
-                onDispatch: async (params) => {
-                    const dispatcherOptions = params.dispatcherOptions as {
-                        onError?: (err: unknown, info: { kind: string }) => void;
-                    };
-                    dispatcherOptions.onError?.(new Error("Connection refused"), {
-                        kind: "final",
-                    });
-                },
-            });
-            const executor = new OpenClawExecutor({
-                agentId: "main",
-                runtime: runtime.runtime as never,
-                config: {} as never,
-                workspaceDir: "/workspace",
-            });
-            const eventBus = makeEventBus();
+        const logger = makeLogger();
+        const runtime = makeRuntime({
+            onDispatch: async (params) => {
+                const dispatcherOptions = params.dispatcherOptions as {
+                    onError?: (err: unknown, info: { kind: string }) => void;
+                };
+                dispatcherOptions.onError?.(new Error("Connection refused"), {
+                    kind: "final",
+                });
+            },
+        });
+        const executor = new OpenClawExecutor({
+            agentId: "main",
+            runtime: runtime.runtime as never,
+            config: {} as never,
+            workspaceDir: "/workspace",
+            logger,
+        });
+        const eventBus = makeEventBus();
 
-            await executor.execute(makeContext(), eventBus);
+        await executor.execute(makeContext(), eventBus);
 
-            expect(eventBus.events.length).toBe(2);
-            const failedEvent = eventBus.events[1] as Record<string, unknown>;
-            expect(failedEvent.kind).toBe("status-update");
-            const status = failedEvent.status as Record<string, unknown>;
-            expect(status.state).toBe("failed");
-            const msg = status.message as Record<string, unknown>;
-            const parts = msg.parts as Array<{ text: string }>;
-            expect(parts[0].text).toBe("Something went wrong.");
-            expect(eventBus.finished).toHaveBeenCalledTimes(1);
-            expect(errorSpy).toHaveBeenCalled();
-        } finally {
-            errorSpy.mockRestore();
-        }
+        expect(eventBus.events.length).toBe(2);
+        const failedEvent = eventBus.events[1] as Record<string, unknown>;
+        expect(failedEvent.kind).toBe("status-update");
+        const status = failedEvent.status as Record<string, unknown>;
+        expect(status.state).toBe("failed");
+        const msg = status.message as Record<string, unknown>;
+        const parts = msg.parts as Array<{ text: string }>;
+        expect(parts[0].text).toBe("Something went wrong.");
+        expect(eventBus.finished).toHaveBeenCalledTimes(1);
+        expect(logger.error).toHaveBeenCalled();
     });
 
     test("maps timeout-like failures to a safe client message", async () => {
-        const errorSpy = spyOn(console, "error").mockImplementation(() => {});
-        try {
-            const runtime = makeRuntime({
-                onDispatch: async (params) => {
-                    const dispatcherOptions = params.dispatcherOptions as {
-                        onError?: (err: unknown, info: { kind: string }) => void;
-                    };
-                    dispatcherOptions.onError?.(new Error("Upstream request timed out"), {
-                        kind: "final",
-                    });
-                },
-            });
-            const executor = new OpenClawExecutor({
-                agentId: "main",
-                runtime: runtime.runtime as never,
-                config: {} as never,
-                workspaceDir: "/workspace",
-            });
-            const eventBus = makeEventBus();
+        const logger = makeLogger();
+        const runtime = makeRuntime({
+            onDispatch: async (params) => {
+                const dispatcherOptions = params.dispatcherOptions as {
+                    onError?: (err: unknown, info: { kind: string }) => void;
+                };
+                dispatcherOptions.onError?.(new Error("Upstream request timed out"), {
+                    kind: "final",
+                });
+            },
+        });
+        const executor = new OpenClawExecutor({
+            agentId: "main",
+            runtime: runtime.runtime as never,
+            config: {} as never,
+            workspaceDir: "/workspace",
+            logger,
+        });
+        const eventBus = makeEventBus();
 
-            await executor.execute(makeContext(), eventBus);
+        await executor.execute(makeContext(), eventBus);
 
-            const failedEvent = eventBus.events[1] as Record<string, unknown>;
-            const message = (
-                (failedEvent.status as Record<string, unknown>).message as Record<string, unknown>
-            ).parts as Array<{ text: string }>;
-            expect(message[0].text).toBe("The request timed out.");
-            expect(errorSpy).toHaveBeenCalled();
-        } finally {
-            errorSpy.mockRestore();
-        }
+        const failedEvent = eventBus.events[1] as Record<string, unknown>;
+        const message = (
+            (failedEvent.status as Record<string, unknown>).message as Record<string, unknown>
+        ).parts as Array<{ text: string }>;
+        expect(message[0].text).toBe("The request timed out.");
+        expect(logger.error).toHaveBeenCalled();
     });
 
     test("treats empty agent output as a failed status without artifacts", async () => {
@@ -341,48 +343,45 @@ describe("OpenClawExecutor", () => {
     });
 
     test("sanitizes attached file retrieval failures", async () => {
-        const errorSpy = spyOn(console, "error").mockImplementation(() => {});
-        try {
-            const runtime = makeRuntime();
-            const executor = new OpenClawExecutor({
-                agentId: "main",
-                runtime: runtime.runtime as never,
-                config: {} as never,
-                fileStore: {
-                    saveMessage: mock(async () => {
-                        throw new Error("HTTP 403: Forbidden");
-                    }),
-                    getMessage: mock(async () => []),
-                    deleteMessage: mock(async () => {}),
-                    saveArtifact: mock(async () => []),
-                    getArtifact: mock(async () => []),
-                    deleteArtifact: mock(async () => {}),
-                },
-                workspaceDir: "/workspace",
-            });
-            const eventBus = makeEventBus();
-
-            await executor.execute(
-                makeContext({
-                    userMessage: {
-                        role: "user",
-                        messageId: "msg-123",
-                        parts: [{ kind: "file", file: { uri: "https://example.com/file.pdf" } }],
-                    } as Message,
+        const logger = makeLogger();
+        const runtime = makeRuntime();
+        const executor = new OpenClawExecutor({
+            agentId: "main",
+            runtime: runtime.runtime as never,
+            config: {} as never,
+            fileStore: {
+                saveMessage: mock(async () => {
+                    throw new Error("HTTP 403: Forbidden");
                 }),
-                eventBus,
-            );
+                getMessage: mock(async () => []),
+                deleteMessage: mock(async () => {}),
+                saveArtifact: mock(async () => []),
+                getArtifact: mock(async () => []),
+                deleteArtifact: mock(async () => {}),
+            },
+            workspaceDir: "/workspace",
+            logger,
+        });
+        const eventBus = makeEventBus();
 
-            expect(eventBus.events).toHaveLength(2);
-            const failedEvent = eventBus.events[1] as Record<string, unknown>;
-            const message = (
-                (failedEvent.status as Record<string, unknown>).message as Record<string, unknown>
-            ).parts as Array<{ text: string }>;
-            expect(message[0].text).toBe("The attached file could not be retrieved.");
-            expect(errorSpy).toHaveBeenCalled();
-        } finally {
-            errorSpy.mockRestore();
-        }
+        await executor.execute(
+            makeContext({
+                userMessage: {
+                    role: "user",
+                    messageId: "msg-123",
+                    parts: [{ kind: "file", file: { uri: "https://example.com/file.pdf" } }],
+                } as Message,
+            }),
+            eventBus,
+        );
+
+        expect(eventBus.events).toHaveLength(2);
+        const failedEvent = eventBus.events[1] as Record<string, unknown>;
+        const message = (
+            (failedEvent.status as Record<string, unknown>).message as Record<string, unknown>
+        ).parts as Array<{ text: string }>;
+        expect(message[0].text).toBe("The attached file could not be retrieved.");
+        expect(logger.error).toHaveBeenCalled();
     });
 
     test("cancelTask aborts in-flight execution", async () => {

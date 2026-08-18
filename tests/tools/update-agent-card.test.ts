@@ -175,7 +175,7 @@ describe("createUpdateAgentCardTool", () => {
         const deps = makeDeps({
             plugins: {
                 entries: {
-                    a2a: {
+                    [PLUGIN_ID]: {
                         config: {
                             inbound: {
                                 agents: {
@@ -196,8 +196,9 @@ describe("createUpdateAgentCardTool", () => {
 
         const written = deps.getWritten() as Record<string, unknown>;
         const config = (
-            ((written.plugins as Record<string, unknown>).entries as Record<string, unknown>)
-                .a2a as Record<string, unknown>
+            ((written.plugins as Record<string, unknown>).entries as Record<string, unknown>)[
+                PLUGIN_ID
+            ] as Record<string, unknown>
         ).config as Record<string, unknown>;
         const agents = (config.inbound as Record<string, unknown>).agents as Record<
             string,

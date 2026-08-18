@@ -14,6 +14,7 @@ import {
     summarizeMessageContent,
 } from "../audit/redact.js";
 import { type A2AAuthConfig, authenticateInboundRequest } from "../auth/authenticate-inbound.js";
+import { type A2AHostLogger, createRequestId, toLogError } from "../log.js";
 import { sendAuthError } from "./auth.js";
 
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
@@ -42,6 +43,7 @@ export type A2AHttpHandlerParams = {
     requestHandler: A2ARequestHandler;
     auth?: A2AAuthConfig;
     audit?: A2AAuditLogger;
+    logger?: A2AHostLogger;
     /** Local inbound agent id (multi-agent mode) for audit metadata. */
     agentId?: string;
 };
@@ -87,6 +89,8 @@ export class A2AHttpHandlers {
 
     async handleJsonRpc(req: IncomingMessage, res: ServerResponse): Promise<void> {
         const started = Date.now();
+        const requestId = createRequestId();
+        res.setHeader("X-Request-Id", requestId);
         if (req.method !== "POST") {
             res.setHeader("Allow", "POST");
             res.statusCode = 405;
@@ -99,7 +103,11 @@ export class A2AHttpHandlers {
             this.sendJson(res, 400, {
                 jsonrpc: "2.0",
                 id: null,
-                error: { code: -32700, message: bodyResult.error },
+                error: {
+                    code: -32700,
+                    message: bodyResult.error,
+                    data: { requestId },
+                },
             });
             this.params.audit?.log({
                 eventType: "error",
@@ -109,13 +117,14 @@ export class A2AHttpHandlers {
                 error: { code: "INVALID_JSON", message: bodyResult.error },
                 metadata: {
                     ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                    request_id: requestId,
                 },
             });
             return;
         }
 
         const method = extractJsonRpcMethod(bodyResult.value);
-        const senderLabel = await this.resolveSenderLabel(req, res, method);
+        const senderLabel = await this.resolveSenderLabel(req, res, method, requestId);
         if (!senderLabel) {
             return;
         }
@@ -147,9 +156,14 @@ export class A2AHttpHandlers {
                         response: undefined,
                         durationMs: Date.now() - started,
                         streaming: true,
+                        requestId,
                     });
                 } catch (err) {
-                    console.error("Error during SSE streaming:", err);
+                    this.params.logger?.error("SSE streaming failed", {
+                        requestId,
+                        operation: "inbound.jsonrpc.stream",
+                        error: toLogError(err),
+                    });
                     this.params.audit?.log({
                         eventType: "error",
                         direction: "inbound",
@@ -162,6 +176,7 @@ export class A2AHttpHandlers {
                         },
                         metadata: {
                             ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                            request_id: requestId,
                             streaming: true,
                         },
                     });
@@ -181,8 +196,14 @@ export class A2AHttpHandlers {
                 response: rpcResponseOrStream,
                 durationMs: Date.now() - started,
                 streaming: false,
+                requestId,
             });
         } catch (err) {
+            this.params.logger?.error("JSON-RPC handler failed", {
+                requestId,
+                operation: "inbound.jsonrpc",
+                error: toLogError(err),
+            });
             this.params.audit?.log({
                 eventType: "error",
                 direction: "inbound",
@@ -195,6 +216,7 @@ export class A2AHttpHandlers {
                 },
                 metadata: {
                     ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                    request_id: requestId,
                 },
             });
             throw err;
@@ -208,6 +230,7 @@ export class A2AHttpHandlers {
         response: unknown;
         durationMs: number;
         streaming: boolean;
+        requestId: string;
     }): void {
         const ids = {
             ...extractTaskContextIds(params.body),
@@ -225,6 +248,7 @@ export class A2AHttpHandlers {
             durationMs: params.durationMs,
             metadata: {
                 ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                request_id: params.requestId,
                 streaming: params.streaming,
             },
         });
@@ -233,7 +257,8 @@ export class A2AHttpHandlers {
     private async resolveSenderLabel(
         req: IncomingMessage,
         res: ServerResponse,
-        method?: string,
+        method: string | undefined,
+        requestId: string,
     ): Promise<string | null> {
         if (!this.params.auth?.required) {
             return ANONYMOUS_SENDER_LABEL;
@@ -241,18 +266,20 @@ export class A2AHttpHandlers {
 
         const result = await authenticateInboundRequest(req, this.params.auth);
         if (!result.ok) {
-            sendAuthError(res, result.error);
+            sendAuthError(res, result.error, { reason: result.reason, requestId });
             this.params.audit?.log({
                 eventType: "auth_failure",
                 direction: "inbound",
                 status: "failure",
                 method,
                 error: {
-                    code: "AUTH_REQUIRED",
+                    code: result.reason,
                     message: result.error,
                 },
                 metadata: {
                     ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                    request_id: requestId,
+                    auth_reason: result.reason,
                 },
             });
             return null;
@@ -266,6 +293,8 @@ export class A2AHttpHandlers {
             method,
             metadata: {
                 ...(this.params.agentId ? { agent_id: this.params.agentId } : {}),
+                request_id: requestId,
+                auth_mode: result.authMode,
             },
         });
 

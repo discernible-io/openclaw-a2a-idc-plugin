@@ -15,9 +15,14 @@ This repository is a fork of [`@a2anet/openclaw-a2a-plugin`](https://github.com/
 
 ## Modifications
 
-IdentyClaw maintains this fork to add RODiT / Passport JWT authentication for A2A peer agents. See [`a2afork.md`](a2afork.md) for the work plan.
+IdentyClaw maintains this fork to add **RODiT / Passport JWT** authentication for A2A peer agents (`inbound.auth.provider: "rodit"`, outbound P2P `login_server`). Current fork-only behavior includes:
 
-Until Phase 1 lands, runtime behavior matches upstream (API key auth only). `@rodit/rodit-auth-be` is present as a dependency for upcoming auth work.
+- Inbound JWT validation and `/api/login*` peer login routes
+- Outbound per-peer JWT cache and 401 retry
+- Passport `token_id` peer resolution (`GET /full`, then on-chain `metadata.webhook_url`)
+- Structured A2A audit logs (`audit.enabled`)
+
+See [`README.md`](README.md) for the current config surface and [`a2afork.md`](a2afork.md) for the remaining rollout plan.
 
 ## Merge policy
 
