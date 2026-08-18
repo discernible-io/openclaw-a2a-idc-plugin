@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-export const VERSION = "0.3.0"; // x-release-please-version
+export const VERSION = "0.4.12"; // x-release-please-version
 
 import * as path from "node:path";
 

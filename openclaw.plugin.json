@@ -2,7 +2,7 @@
     "id": "identyclaw-a2a",
     "name": "OpenClaw A2A Plugin",
     "description": "A2A peer messaging with RODiT / Passport JWT authentication",
-    "version": "0.4.11",
+    "version": "0.4.12",
     "activation": {
         "onStartup": true
     },

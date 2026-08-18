@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.12 — 2026-08-18
+
 - Log API→chain peer resolution with failed source, error, and chosen source; record `auth_success.metadata.auth_mode` (`rodit` vs API-key fallback).
 - Replace runtime `console.error` with the host logger; include `component: "A2A"` and a request correlation id on `/a2a` and `/api/login`.
 - Add `requestId` and `timestamp` to REST login errors; keep JSON-RPC on `/a2a` and put the auth `reason` in `error.data`.
