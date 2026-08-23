@@ -8,7 +8,7 @@ Part of [IdentyClaw](https://www.discernible.io/#developers).
 
 ![IdentyClaw A2A Gateway Component](images/identyclaw-a2a-banner.png)
 
-[![GitHub](https://img.shields.io/github/stars/discernible-io/openclaw-a2a-idc-plugin?style=social)](https://github.com/discernible-io/openclaw-a2a-idc-plugin) [![npm version](https://img.shields.io/npm/v/@identyclaw/openclaw-a2a-plugin.svg?label=npm)](https://www.npmjs.com/package/@identyclaw/openclaw-a2a-plugin) [![License](https://img.shields.io/github/license/discernible-io/openclaw-a2a-idc-plugin)](https://github.com/discernible-io/openclaw-a2a-idc-plugin/blob/main/LICENSE) [![A2A Protocol](https://img.shields.io/badge/A2A-Protocol-0ea5e9)](https://a2a-protocol.org) [![RODiT JWT](https://img.shields.io/badge/auth-RODiT%20JWT-14b8a6)](https://api.identyclaw.com/.well-known/mcp)
+[![GitHub](https://img.shields.io/github/stars/discernible-io/openclaw-identyclaw-a2a-plugin?style=social)](https://github.com/discernible-io/openclaw-identyclaw-a2a-plugin) [![npm version](https://img.shields.io/npm/v/@identyclaw/openclaw-a2a-plugin.svg?label=npm)](https://www.npmjs.com/package/@identyclaw/openclaw-a2a-plugin) [![License](https://img.shields.io/github/license/discernible-io/openclaw-identyclaw-a2a-plugin)](https://github.com/discernible-io/openclaw-identyclaw-a2a-plugin/blob/main/LICENSE) [![A2A Protocol](https://img.shields.io/badge/A2A-Protocol-0ea5e9)](https://a2a-protocol.org) [![RODiT JWT](https://img.shields.io/badge/auth-RODiT%20JWT-14b8a6)](https://api.identyclaw.com/.well-known/mcp)
 
 <p align="center">
   <img src="images/identyclaw-a2a-ecosystem.svg" alt="IdentyClaw stack: OpenClaw gateway, this A2A component, and live Passport API JWT contract" width="960"/>
@@ -832,7 +832,7 @@ make install-hooks
 Install the plugin:
 
 ```bash
-openclaw plugins install /absolute/path/to/openclaw-a2a-idc-plugin
+openclaw plugins install /absolute/path/to/openclaw-identyclaw-a2a-plugin
 ```
 
 Restart the gateway:
@@ -847,7 +847,7 @@ Apache-2.0
 
 ## 🔗 IdentyClaw & upstream links
 
-- **This repo:** [discernible-io/openclaw-a2a-idc-plugin](https://github.com/discernible-io/openclaw-a2a-idc-plugin)
+- **This repo:** [discernible-io/openclaw-identyclaw-a2a-plugin](https://github.com/discernible-io/openclaw-identyclaw-a2a-plugin)
 - **Production template:** [discernible-io/identyclaw-agents](https://github.com/discernible-io/identyclaw-agents) — nginx TLS, A2A, webhooks, CI
 - **IdentyClaw tools:** [discernible-io/openclaw-identyclaw-plugin](https://github.com/discernible-io/openclaw-identyclaw-plugin) — API login, HOLA, identity (`identyclaw_*` tools)
 - **Webhooks component:** [discernible-io/openclaw-identyclaw-webhooks-plugin](https://github.com/discernible-io/openclaw-identyclaw-webhooks-plugin) — RODiT-signed ingress on `/hooks/wake` and `/hooks/agent`

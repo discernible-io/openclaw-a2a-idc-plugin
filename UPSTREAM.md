@@ -7,7 +7,7 @@ This repository is a fork of [`@a2anet/openclaw-a2a-plugin`](https://github.com/
 | Field | Value |
 |-------|-------|
 | Repository | https://github.com/a2anet/openclaw-a2a-plugin |
-| Fork | https://github.com/discernible-io/openclaw-a2a-idc-plugin |
+| Fork | https://github.com/discernible-io/openclaw-identyclaw-a2a-plugin |
 | Branch | `main` |
 | Commit | `e7e1d8a45fa696e977ab78aee7c133dcd54c7657` |
 | Upstream release | `0.2.0` |

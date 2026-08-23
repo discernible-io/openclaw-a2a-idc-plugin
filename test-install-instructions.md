@@ -57,7 +57,7 @@ After code changes: rebuild, reinstall (or restart the gateway if your OpenClaw 
 ### From git (pinned)
 
 ```bash
-openclaw plugins install github:discernible-io/openclaw-a2a-idc-plugin --pin
+openclaw plugins install github:discernible-io/openclaw-identyclaw-a2a-plugin --pin
 openclaw gateway restart
 ```
 

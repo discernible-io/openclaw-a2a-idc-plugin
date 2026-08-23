@@ -10,7 +10,7 @@ Related context: [`security-compliance-improvements.md`](security-compliance-imp
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| 0 — Fork bootstrap | Done | Pushed to [`discernible-io/openclaw-a2a-idc-plugin`](https://github.com/discernible-io/openclaw-a2a-idc-plugin) |
+| 0 — Fork bootstrap | Done | Pushed to [`discernible-io/openclaw-identyclaw-a2a-plugin`](https://github.com/discernible-io/openclaw-identyclaw-a2a-plugin) |
 | 1 — Inbound RODiT auth | Done | Committed with Phase 2 |
 | 2 — Outbound JWT acquisition | Done | Tier 1 unit tests pass; staging smoke deferred to identyclaw |
 | **3 — publicBaseUrl** | **Done (plugin)** | Config + URL resolution implemented |
@@ -154,7 +154,7 @@ Ordered checklist from current state to a published, production-ready fork.
 - [ ] **Host A:** identyclaw + `agent-a` (Juanelo) — Passport credentials present
 - [ ] **Host B:** identyclaw + `agent-b` (Archimedes) — add `secrets/near-credentials/*.json`, restart
 - [ ] Each host: `./identyclaw.sh build-image && ./identyclaw.sh start agent-<id>`
-- [ ] Each host: plugin installed (`ensure_a2a_packages` or `openclaw plugins install github:discernible-io/openclaw-a2a-idc-plugin --pin`)
+- [ ] Each host: plugin installed (`ensure_a2a_packages` or `openclaw plugins install github:discernible-io/openclaw-identyclaw-a2a-plugin --pin`)
 
 ### Step 2 — Public URLs and TLS (Phase 5, per host)
 
@@ -265,14 +265,14 @@ Both repos are private to the Discernible org — clone locally when implementin
 |------|----------------|
 | Upstream | `https://github.com/a2anet/openclaw-a2a-plugin` |
 | License | Apache 2.0 (retain LICENSE + NOTICE; document modifications) |
-| New repo | `discernible-io/openclaw-a2a-idc-plugin` |
+| New repo | `discernible-io/openclaw-identyclaw-a2a-plugin` |
 | npm package | `@identyclaw/openclaw-a2a-plugin` |
 | OpenClaw plugin id | Keep `"a2a"` if possible (minimizes `openclaw.json` churn) |
 | Pin upstream | Tag/commit at fork time; document in `UPSTREAM.md` |
 
 ### Phase 0 — Fork bootstrap (0.5–1 day)
 
-- [x] Fork repo under IdentyClaw org → [`discernible-io/openclaw-a2a-idc-plugin`](https://github.com/discernible-io/openclaw-a2a-idc-plugin)
+- [x] Fork repo under IdentyClaw org → [`discernible-io/openclaw-identyclaw-a2a-plugin`](https://github.com/discernible-io/openclaw-identyclaw-a2a-plugin)
 - [x] Rename `package.json` (`name`, `repository`, `description`)
 - [x] Add `@rodit/rodit-auth-be` dependency
 - [x] Add `UPSTREAM.md` with pinned upstream SHA and merge policy
@@ -954,7 +954,7 @@ Upstream layout may vary; locate equivalents after fork:
 ## References
 
 - Upstream plugin: https://github.com/a2anet/openclaw-a2a-plugin
-- **This fork:** https://github.com/discernible-io/openclaw-a2a-idc-plugin
+- **This fork:** https://github.com/discernible-io/openclaw-identyclaw-a2a-plugin
 - **Reference server:** https://github.com/discernible-io/idclawserver-idc (auth API / JWT validation patterns)
 - **Reference client:** https://github.com/discernible-io/clienttest-idc (outbound login + Bearer attachment patterns)
 - A2A spec (security): https://a2a-protocol.org/latest/specification/
